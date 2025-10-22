@@ -25,20 +25,21 @@ class Api {
     if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
   };
 
-  static Future<AuthResponse> login({required String numero, required String dni}) async {
-    final res = await http.post(
-      Uri.parse('$_base/auth/login'),
-      headers: _headers(null),
-      body: jsonEncode({'numero': numero, 'dni': dni}),
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      final j = jsonDecode(res.body);
-      final r = AuthResponse.fromJson(j);
-      await saveToken(r.token);
-      return r;
-    }
-    throw Exception('Login inválido (${res.statusCode})');
+  static Future<AuthResponse> login({required String numero, required String apellido}) async {
+  final res = await http.post(
+    Uri.parse('$_base/auth/login'),
+    headers: _headers(null),
+    body: jsonEncode({'numero': numero, 'apellido': apellido}), // <-- CAMBIO
+  );
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    final j = jsonDecode(res.body);
+    final r = AuthResponse.fromJson(j);
+    await saveToken(r.token);
+    return r;
   }
+  throw Exception('Login inválido (${res.statusCode})');
+}
+
 
   static Future<Perfil> getPerfil() async {
     final t = await token;

@@ -11,17 +11,22 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _nroCtrl = TextEditingController();
-  final _dniCtrl = TextEditingController();
+  final _apeCtrl = TextEditingController();
   bool _loading = false;
 
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      await Api.login(numero: _nroCtrl.text.trim(), dni: _dniCtrl.text.trim());
+      await Api.login(
+        numero: _nroCtrl.text.trim(),
+        apellido: _apeCtrl.text.trim(),
+      );
       widget.onLogged();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -37,11 +42,21 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('Ingreso', style: Theme.of(context).textTheme.headlineMedium),
+              Text(
+                'Ingreso',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
               const SizedBox(height: 24),
-              TextField(controller: _nroCtrl, decoration: const InputDecoration(labelText: 'Número de socio')),
+              TextField(
+                controller: _nroCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Número de socio'),
+              ),
               const SizedBox(height: 12),
-              TextField(controller: _dniCtrl, decoration: const InputDecoration(labelText: 'DNI'), obscureText: true),
+              TextField(
+                controller: _apeCtrl,
+                decoration: const InputDecoration(labelText: 'Apellido'),
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -49,7 +64,7 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: _loading ? null : _submit,
                   child: Text(_loading ? 'Ingresando…' : 'Ingresar'),
                 ),
-              )
+              ),
             ],
           ),
         ),
