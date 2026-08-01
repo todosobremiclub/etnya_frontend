@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "821308281673",
+    "project_id": "etnya-652be",
+    "storage_bucket": "etnya-652be.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:821308281673:android:8aad08d9da6769f07d4098",
+        "android_client_info": {
+          "package_name": "com.etnya.pilates"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwNDUQwnaR99YoZRtWdMXUhCqL1vNHPFM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

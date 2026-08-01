@@ -1,35 +1,113 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../api/api.dart';
-import '../models/models.dart';
+import 'package:http/http.dart' as http;
+import 'package:firebase_messaging/firebase_messaging.dart';
 
-class NotificacionesPage extends StatelessWidget {
+class NotificacionesPage extends StatefulWidget {
   const NotificacionesPage({super.key});
 
   @override
+  State<NotificacionesPage> createState() => _NotificacionesPageState();
+}
+
+class _NotificacionesPageState extends State<NotificacionesPage> {
+  List<Map<String, dynamic>> _notificaciones = [];
+  bool _cargando = true;
+
+  static const String _baseUrl = 'https://etnya.onrender.com';
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarNotificaciones();
+
+    // 🔔 Escuchar notificaciones push en tiempo real
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final titulo = message.notification?.title ?? 'Notificación';
+      final cuerpo = message.notification?.body ?? '';
+      setState(() {
+        _notificaciones.insert(0, {
+          'titulo': titulo,
+          'mensaje': cuerpo,
+          'fecha': DateTime.now().toIso8601String(),
+        });
+      });
+    });
+  }
+
+  /// 🔹 Obtener notificaciones guardadas en el backend
+  Future<void> _cargarNotificaciones() async {
+    try {
+      final res = await http.get(Uri.parse('$_baseUrl/notificaciones'));
+      if (res.statusCode == 200) {
+        final data = List<Map<String, dynamic>>.from(jsonDecode(res.body));
+        setState(() {
+          _notificaciones = data;
+          _cargando = false;
+        });
+      } else {
+        throw Exception('Error ${res.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error al obtener notificaciones: $e');
+      setState(() => _cargando = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Noti>>(
-      future: Api.getNotificaciones(),
-      builder: (ctx, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-        final list = snap.data!;
-        if (list.isEmpty) return const Center(child: Text('Sin notificaciones'));
-        return ListView.separated(
-          itemCount: list.length,
-          separatorBuilder: (_, __) => const Divider(height: 0),
-          itemBuilder: (_, i) {
-            final n = list[i];
-            return ListTile(
-              leading: const Icon(Icons.notifications),
-              title: Text(n.titulo),
-              subtitle: Text('${n.fecha}\n${n.texto}'),
-              isThreeLine: true,
-            );
-          },
-        );
-      },
+    return Scaffold(
+      backgroundColor: const Color(0xFFE5F0EA),
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _cargarNotificaciones,
+              child: _notificaciones.isEmpty
+                  ? const Center(child: Text("No hay notificaciones"))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _notificaciones.length,
+                      itemBuilder: (context, i) {
+                        final n = _notificaciones[i];
+                        final fecha = n['fecha'] ?? DateTime.now().toString();
+                        return Card(
+                          elevation: 2,
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: ListTile(
+                            leading: const Icon(
+                              Icons.notifications_active,
+                              color: Color(0xFF7E4C5B),
+                            ),
+                            title: Text(
+                              n['titulo'] ?? '',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF7E4C5B),
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(n['mensaje'] ?? ''),
+                                const SizedBox(height: 4),
+                                Text(
+                                  fecha
+                                      .toString()
+                                      .substring(0, 16)
+                                      .replaceAll('T', ' '),
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
     );
   }
 }

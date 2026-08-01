@@ -17,17 +17,11 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      await Api.login(
-        numero: _nroCtrl.text.trim(),
-        apellido: _apeCtrl.text.trim(),
-      );
+      await Api.login(numero: _nroCtrl.text.trim(), apellido: _apeCtrl.text.trim());
       widget.onLogged();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -42,10 +36,7 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                'Ingreso',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
+              Text('Ingreso', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 24),
               TextField(
                 controller: _nroCtrl,
