@@ -18,7 +18,7 @@ match(
       git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"]
     )
 
-    update_code_signing_settings(
+update_code_signing_settings(
       use_automatic_signing: false,
       path: "Runner.xcodeproj",
       team_id: "4UJ4674864",
@@ -26,7 +26,7 @@ match(
       bundle_identifier: "com.etnya.pilates",
       profile_name: "match AppStore com.etnya.pilates",
       targets: "Runner",
-      configuration: "Release"
+      build_configurations: ["Release"]
     )
 
     increment_build_number(
