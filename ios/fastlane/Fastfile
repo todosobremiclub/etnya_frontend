@@ -11,11 +11,22 @@ platform :ios do
       in_house: false
     )
 
-    match(
+match(
       type: "appstore",
       api_key: api_key,
       readonly: false,
       git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"]
+    )
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Runner.xcodeproj",
+      team_id: "4UJ4674864",
+      code_sign_identity: "Apple Distribution",
+      bundle_identifier: "com.etnya.pilates",
+      profile_name: "match AppStore com.etnya.pilates",
+      targets: "Runner",
+      configuration: "Release"
     )
 
     increment_build_number(
