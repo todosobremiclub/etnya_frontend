@@ -45,3 +45,5 @@ app.*.map.json
 /android/app/release
 android/app/build/
 android/app/build_old/
+AuthKey_7P7R96GZAK.p8
+build_log.txt

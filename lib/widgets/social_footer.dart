@@ -56,8 +56,8 @@ class SocialFooter extends StatelessWidget {
     );
   }
 
-  Widget _icon({
-    required IconData icon,
+Widget _icon({
+    required FaIconData icon,
     required VoidCallback onTap,
     required Color border,
     required Color color,
