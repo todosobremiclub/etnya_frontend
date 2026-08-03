@@ -26,8 +26,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (!kIsWeb) {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    try {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    } catch (e) {
+      print('⚠️ Firebase no pudo inicializarse: $e');
+      // La app sigue funcionando aunque falle Firebase (sin notificaciones push).
+    }
   }
 
   runApp(const EtnyaApp());
@@ -460,7 +465,7 @@ class _SocialIcon extends StatelessWidget {
   final Color background;
   final Color borderColor;
   final Color iconColor;
-  final IconData icon;
+  final FaIconData icon;
   final VoidCallback onTap;
 
   const _SocialIcon({
