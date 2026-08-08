@@ -31,5 +31,6 @@ flutter:
 
   assets:
     - assets/logo.jpeg
+    - assets/bambu.jpg
 
 

@@ -10,10 +10,10 @@ import 'pages/agenda_page.dart';
 import 'pages/pagos_page.dart';
 import 'pages/novedades_page.dart';
 import 'pages/notificaciones_page.dart';
+import 'pages/mi_recorrido_page.dart';
 import 'pages/terms_page.dart';
+import 'widgets/social_footer.dart';
 
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// handler de FCM en segundo plano (solo mobile)
@@ -65,24 +65,29 @@ class Gate extends StatefulWidget {
 
 class _GateState extends State<Gate> {
   String? _token;
-  bool _loadingPrefs = true;
-  bool _acceptedTerms = false;
+  bool _authChecked = false; // ya sabemos si había un token guardado
 
-  // layout de fichas tipo fichero
-  static const double _cardHeight = 90;
-  static const double _overlap = 8; // se pisan apenas
-  static const int _cardCount = 5;
-  static const double _step = _cardHeight - _overlap;
+  // null = todavía no consultamos al backend si aceptó los términos;
+  // true/false = respuesta ya conocida (se guarda en el backend, no en
+  // el dispositivo, así queda registrado quién aceptó).
+  bool? _acceptedTerms;
+
+  // Future de la tarjeta "Próxima clase" (se crea una sola vez al entrar al Home)
+  Future<Map<String, dynamic>?>? _proximaClaseFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
     if (!kIsWeb) {
       _setupFCM();
     }
     Api.token.then((t) {
-      if (mounted) setState(() => _token = t);
+      if (!mounted) return;
+      setState(() {
+        _token = t;
+        _authChecked = true;
+      });
+      if (t != null) _checkTerminos();
     });
   }
 
@@ -97,6 +102,17 @@ class _GateState extends State<Gate> {
     final token = await messaging.getToken();
     print('🎯 FCM token: $token');
     await messaging.subscribeToTopic('general');
+
+    // Guardamos el token en el backend para poder mandarle a esta socia
+    // el recordatorio 1 hora antes de cada clase. Si todavía no inició
+    // sesión, Api.saveFcmToken no hace nada (se reintenta al loguearse).
+    if (token != null) {
+      await Api.saveFcmToken(token);
+    }
+    messaging.onTokenRefresh.listen((nuevoToken) {
+      Api.saveFcmToken(nuevoToken);
+    });
+
     FirebaseMessaging.onMessage.listen((m) {
       final title = m.notification?.title ?? 'Notificación';
       final body = m.notification?.body ?? '';
@@ -111,31 +127,41 @@ class _GateState extends State<Gate> {
     });
   }
 
-  Future<void> _loadPrefs() async {
-    final sp = await SharedPreferences.getInstance();
-    final accepted = sp.getBool('accepted_terms_v1') ?? false;
+  /// Le pregunta al backend si esta socia ya aceptó los términos. Se guarda
+  /// ahí (no en el dispositivo) para que quede registrado de forma
+  /// permanente y no vuelva a preguntarse en otro celular/reinstalación.
+  Future<void> _checkTerminos() async {
     if (!mounted) return;
-    setState(() {
-      _acceptedTerms = accepted;
-      _loadingPrefs = false;
-    });
+    setState(() => _acceptedTerms = null);
+    try {
+      final perfil = await Api.getPerfil();
+      if (!mounted) return;
+      setState(() => _acceptedTerms = perfil['terminos_aceptados'] == true);
+    } catch (e) {
+      // Si falla la consulta (sin conexión, backend caído, etc.) no
+      // bloqueamos el acceso a la app por eso.
+      if (!mounted) return;
+      setState(() => _acceptedTerms = true);
+    }
   }
 
   Future<void> _onAcceptTerms() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setBool('accepted_terms_v1', true);
+    try {
+      await Api.aceptarTerminos();
+    } catch (_) {
+      // si falla el guardado remoto, igual dejamos pasar: no tiene sentido
+      // trabar a la socia por un error de red al aceptar los términos.
+    }
     if (!mounted) return;
     setState(() => _acceptedTerms = true);
   }
 
   Future<void> _onRejectTerms() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove('accepted_terms_v1');
     await Api.logout();
     if (!mounted) return;
     setState(() {
       _token = null;
-      _acceptedTerms = false;
+      _acceptedTerms = null;
     });
   }
 
@@ -144,23 +170,71 @@ class _GateState extends State<Gate> {
     if (mounted) setState(() => _token = null);
   }
 
-  // Redes
-  Future<void> _openWhatsApp() async {
-    const phone = '5491151192428';
-    final uri =
-        Uri.parse('https://wa.me/$phone?text=Hola%20Etnya%20Pilates');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
+  // ======== Próxima clase (tarjeta del Home) ========
+  Future<Map<String, dynamic>?> _fetchProximaClase() async {
+    final now = DateTime.now();
+    String ym(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}';
 
-  Future<void> _openInstagram() async {
-    final uri = Uri.parse(
-        'https://www.instagram.com/etnyapilates?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
+    final mesesAConsultar = <String>{
+      ym(now),
+      ym(DateTime(now.year, now.month + 1, 1)),
+    };
 
-  Future<void> _openYoutube() async {
-    final uri = Uri.parse('https://www.youtube.com/@etnyapilates6759');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final candidatas = <Map<String, dynamic>>[];
+    for (final m in mesesAConsultar) {
+      try {
+        final data = await Api.getClases(m);
+        final items = (data['items'] as List? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map));
+        candidatas.addAll(items);
+      } catch (_) {
+        // si falla un mes, seguimos con el resto
+      }
+    }
+
+    Map<String, dynamic>? mejor;
+    DateTime? mejorFecha;
+
+    for (final c in candidatas) {
+      DateTime? dt = DateTime.tryParse((c['fecha_hora'] ?? '').toString());
+      if (dt == null) {
+        final f = DateTime.tryParse((c['fecha'] ?? '').toString());
+        final horaStr = (c['hora'] ?? '').toString();
+        if (f != null && horaStr.isNotEmpty) {
+          final partes = horaStr.split(':');
+          final h = int.tryParse(partes[0]) ?? 0;
+          final min = int.tryParse(partes.length > 1 ? partes[1] : '0') ?? 0;
+          dt = DateTime(f.year, f.month, f.day, h, min);
+        } else {
+          dt = f;
+        }
+      }
+      if (dt == null) continue;
+      if (dt.isBefore(now)) continue;
+
+      final estado = (c['estado'] ?? '').toString().toLowerCase();
+      if (estado.contains('cancel') || estado.contains('suspend')) continue;
+
+      if (mejorFecha == null || dt.isBefore(mejorFecha)) {
+        mejorFecha = dt;
+        mejor = {...c, '_fecha': dt};
+      }
+    }
+
+    // La modalidad real del socio (ej. "Pilates Reformer") vive en su perfil,
+    // no en la clase individual (que solo indica normal/recuperación/etc).
+    if (mejor != null) {
+      try {
+        final perfil = await Api.getPerfil();
+        mejor['_tipoClase'] =
+            (perfil['tipo_clase'] ?? '').toString().trim();
+      } catch (_) {
+        // si falla, seguimos sin la modalidad
+      }
+    }
+
+    return mejor;
   }
 
   // Navegación a secciones
@@ -199,10 +273,17 @@ class _GateState extends State<Gate> {
     );
   }
 
+  void _goMiRecorrido() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MiRecorridoPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 1) Cargando prefs
-    if (_loadingPrefs) {
+    // 1) Todavía no sabemos si había una sesión guardada
+    if (!_authChecked) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -210,140 +291,111 @@ class _GateState extends State<Gate> {
 
     // 2) No logueado
     if (_token == null) {
-      return LoginPage(onLogged: () => setState(() => _token = 'ok'));
+      return LoginPage(
+        onLogged: () {
+          setState(() => _token = 'ok');
+          _checkTerminos();
+          if (!kIsWeb) {
+            // Ahora que hay sesión, reintentamos guardar el token FCM
+            // (por si se había obtenido antes de loguearse).
+            FirebaseMessaging.instance.getToken().then((t) {
+              if (t != null) Api.saveFcmToken(t);
+            });
+          }
+        },
+      );
     }
 
-    // 3) Logueado pero sin aceptar términos
-    if (!_acceptedTerms) {
+    // 3) Logueado, consultando al backend si ya aceptó los términos
+    if (_acceptedTerms == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // 4) Logueado pero sin aceptar términos (según el backend)
+    if (_acceptedTerms == false) {
       return TermsPage(
         onAccepted: _onAcceptTerms,
         onRejected: _onRejectTerms,
       );
     }
 
-    // 4) Home
+    // 5) Home
+    _proximaClaseFuture ??= _fetchProximaClase();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F5),
       body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            _Header(onLogout: _onLogout),
-            const SizedBox(height: 40),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 6),
+              _Header(onLogout: _onLogout),
+              const SizedBox(height: 16),
 
-            // Fichas tipo fichero
-            Expanded(
-              child: SingleChildScrollView(
-                child: SizedBox(
-                  height: _cardHeight + (_cardCount - 1) * _step,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        top: 0 * _step,
-                        left: 0,
-                        right: 0,
-                        child: _MenuCard(
-                          text: 'Perfil',
-                          colors: const [
-                            Color(0xFFA3D8C3),
-                            Color(0xFF8ECFB5),
-                          ],
-                          onTap: _goPerfil,
-                        ),
-                      ),
-                      Positioned(
-                        top: 1 * _step,
-                        left: 0,
-                        right: 0,
-                        child: _MenuCard(
-                          text: 'Clases',
-                          colors: const [
-                            Color(0xFF6CCF85),
-                            Color(0xFF4FBF75),
-                          ],
-                          onTap: _goAgenda,
-                        ),
-                      ),
-                      Positioned(
-                        top: 2 * _step,
-                        left: 0,
-                        right: 0,
-                        child: _MenuCard(
-                          text: 'Pagos',
-                          colors: const [
-                            Color(0xFFA2E4E4),
-                            Color(0xFF86D3D3),
-                          ],
-                          onTap: _goPagos,
-                        ),
-                      ),
-                      Positioned(
-                        top: 3 * _step,
-                        left: 0,
-                        right: 0,
-                        child: _MenuCard(
-                          text: 'Novedades',
-                          colors: const [
-                            Color(0xFFCAB7F0),
-                            Color(0xFFBBA3EA),
-                          ],
-                          onTap: _goNovedades,
-                        ),
-                      ),
-                      Positioned(
-                        top: 4 * _step,
-                        left: 0,
-                        right: 0,
-                        child: _MenuCard(
-                          text: 'Notificaciones',
-                          colors: const [
-                            Color(0xFFB19AD9),
-                            Color(0xFF9D84D0),
-                          ],
-                          onTap: _goNotificaciones,
-                        ),
-                      ),
-                    ],
-                  ),
+              _ProximaClaseCard(
+                future: _proximaClaseFuture!,
+                onTapEstadoPago: _goPagos,
+              ),
+
+              const SizedBox(height: 12),
+
+              // Menú principal
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _MenuRow(
+                      icon: Icons.person_outline,
+                      label: 'Perfil',
+                      accentColor: const Color(0xFF8ECFB5),
+                      onTap: _goPerfil,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.self_improvement,
+                      label: 'Clases',
+                      accentColor: const Color(0xFF4FBF75),
+                      onTap: _goAgenda,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.credit_card,
+                      label: 'Pagos',
+                      accentColor: const Color(0xFF86D3D3),
+                      onTap: _goPagos,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.campaign_outlined,
+                      label: 'Novedades',
+                      accentColor: const Color(0xFFBBA3EA),
+                      onTap: _goNovedades,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.spa_outlined,
+                      label: 'Mi recorrido',
+                      accentColor: const Color(0xFF9D84D0),
+                      onTap: _goMiRecorrido,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.notifications_outlined,
+                      label: 'Notificaciones',
+                      accentColor: const Color(0xFF6FA8DC),
+                      onTap: _goNotificaciones,
+                    ),
+                  ],
                 ),
               ),
-            ),
 
-            const SizedBox(height: 8),
-
-            // Redes sociales abajo
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _SocialIcon(
-                  background: Colors.white,
-                  borderColor: const Color(0xFF25D366),
-                  iconColor: const Color(0xFF25D366),
-                  icon: FontAwesomeIcons.whatsapp,
-                  onTap: _openWhatsApp,
-                ),
-                const SizedBox(width: 18),
-                _SocialIcon(
-                  background: Colors.white,
-                  borderColor: Colors.pinkAccent,
-                  iconColor: Colors.pinkAccent,
-                  icon: FontAwesomeIcons.instagram,
-                  onTap: _openInstagram,
-                ),
-                const SizedBox(width: 18),
-                _SocialIcon(
-                  background: Colors.white,
-                  borderColor: Colors.redAccent,
-                  iconColor: Colors.redAccent,
-                  icon: FontAwesomeIcons.youtube,
-                  onTap: _openYoutube,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-          ],
+              const SocialFooter(),
+            ],
+          ),
         ),
       ),
     );
@@ -366,19 +418,17 @@ class _Header extends StatelessWidget {
           child: FutureBuilder<Map<String, dynamic>>(
             future: Api.getPerfil(),
             builder: (context, snap) {
-              String saludo = 'Hola!';
+              String saludo = 'Hola! 👋';
               if (snap.hasData) {
                 final p = snap.data!;
                 final nombre = (p['nombre'] ?? '').toString().trim();
-                final apellido = (p['apellido'] ?? '').toString().trim();
-                final completo = ('$nombre $apellido').trim();
-                if (completo.isNotEmpty) saludo = 'Hola $completo!';
+                if (nombre.isNotEmpty) saludo = 'Hola, $nombre 👋';
               }
               return Text(
                 saludo,
                 style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w700,
                   fontFamily: 'Georgia',
                 ),
               );
@@ -405,105 +455,307 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _MenuCard extends StatelessWidget {
-  final String text;
-  final List<Color> colors;
+/// Indicador chico y discreto del estado de pago (debajo de "Próxima clase"):
+/// signo "$" verde si está al día, rojo si está en mora. Lleva a Pagos.
+class _EstadoPagoChip extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _MenuCard({
-    super.key,
-    required this.text,
-    required this.colors,
-    required this.onTap,
-  });
+  const _EstadoPagoChip({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.96, end: 1.0),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
+    return FutureBuilder<Map<String, dynamic>>(
+      future: Api.getPerfil(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+
+        final estado = (snap.data!['estado_pago'] ?? '').toString();
+        final alDia = estado == 'al_dia';
+        final color = alDia ? const Color(0xFF4FBF75) : const Color(0xFFD9534F);
+
+        return InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 1.3),
+                  ),
+                  child: Text(
+                    '\$',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  alDia ? 'Al día' : 'En mora',
+                  style: TextStyle(
+                    fontFamily: 'Georgia',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: color.withOpacity(0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       },
-      child: InkWell(
-        borderRadius: BorderRadius.circular(40),
-        onTap: onTap,
-        child: Container(
-          height: 90,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: colors,
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: BorderRadius.circular(40),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Georgia',
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
 
-class _SocialIcon extends StatelessWidget {
-  final Color background;
-  final Color borderColor;
-  final Color iconColor;
-  final FaIconData icon;
+/// Fila del menú principal del Home (icono + label + flecha, con barra de color)
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accentColor;
   final VoidCallback onTap;
 
-  const _SocialIcon({
-    super.key,
-    required this.background,
-    required this.borderColor,
-    required this.iconColor,
+  const _MenuRow({
     required this.icon,
+    required this.label,
+    required this.accentColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: Container(
-        width: 48,
-        height: 48,
         decoration: BoxDecoration(
-          color: background,
-          shape: BoxShape.circle,
-          border: Border.all(color: borderColor, width: 2),
+          // fondo con un tinte suave del color de la sección (en vez de blanco puro)
+          color: Color.alphaBlend(accentColor.withOpacity(0.10), Colors.white),
+          borderRadius: BorderRadius.circular(18),
+          border: Border(left: BorderSide(color: accentColor, width: 4)),
           boxShadow: [
             BoxShadow(
-              color: borderColor.withOpacity(0.18),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 8,
-              offset: const Offset(0, 4),
+              offset: const Offset(0, 3),
             ),
           ],
         ),
-        child: Center(
-          child: FaIcon(
-            icon,
-            color: iconColor,
-            size: 22,
-          ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: accentColor.withOpacity(0.5), width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, color: accentColor, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Georgia',
+                  color: Color(0xFF0E3A5D),
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.black45, size: 20),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta "Próxima clase" del Home, con datos reales de la API.
+class _ProximaClaseCard extends StatelessWidget {
+  final Future<Map<String, dynamic>?> future;
+  final VoidCallback onTapEstadoPago;
+
+  const _ProximaClaseCard({required this.future, required this.onTapEstadoPago});
+
+  String _labelFecha(DateTime dt) {
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final dia = DateTime(dt.year, dt.month, dt.day);
+    final diff = dia.difference(hoy).inDays;
+    if (diff == 0) return 'Hoy';
+    if (diff == 1) return 'Mañana';
+    const names = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo'
+    ];
+    return '${names[dt.weekday - 1]} ${dt.day}/${dt.month}';
+  }
+
+  /// Nombre de modalidad a mostrar: prioriza la modalidad del socio
+  /// (ej. "Pilates Reformer"); si no hay, y la clase tiene un tipo
+  /// distinto de "normal" (ej. "recuperación"), muestra ese.
+  /// Si la modalidad del socio viene con aclaraciones después de un "-"
+  /// (ej. "Pilates Reformer - 2 x semana"), se muestra solo la parte
+  /// antes del guion.
+  String _tipoAMostrar(Map<String, dynamic> clase) {
+    final tipoClaseSocio = (clase['_tipoClase'] ?? '').toString().trim();
+    if (tipoClaseSocio.isNotEmpty) {
+      return tipoClaseSocio.split('-').first.trim();
+    }
+
+    final tipo = (clase['tipo'] ?? '').toString().trim();
+    if (tipo.isEmpty || tipo.toLowerCase() == 'normal') return '';
+    return tipo[0].toUpperCase() + tipo.substring(1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 10, 16),
+      decoration: BoxDecoration(
+        // mismo tono claro que el fondo de la ilustración, para que se vea todo integrado
+        color: const Color(0xFFF5F6F8),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: FutureBuilder<Map<String, dynamic>?>(
+        future: future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const SizedBox(
+              height: 70,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              ),
+            );
+          }
+
+          final clase = snap.data;
+          if (clase == null) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.event_available, color: Color(0xFF8B6FC9), size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No tenés clases próximas agendadas',
+                        style: TextStyle(
+                          fontFamily: 'Georgia',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: Color(0xFF0E3A5D),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                _EstadoPagoChip(onTap: onTapEstadoPago),
+              ],
+            );
+          }
+
+          final dt = clase['_fecha'] as DateTime;
+          final tipo = _tipoAMostrar(clase);
+          final hora =
+              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              // La ilustración ocupa ~45% del ancho de la tarjeta,
+              // acercándose al bloque de la fecha.
+              final imgWidth = (constraints.maxWidth * 0.45).clamp(120.0, 190.0);
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.calendar_today,
+                                color: Color(0xFF8B6FC9), size: 14),
+                            SizedBox(width: 6),
+                            Text(
+                              'PRÓXIMA CLASE',
+                              style: TextStyle(
+                                color: Color(0xFF8B6FC9),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${_labelFecha(dt)} • $hora hs',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Georgia',
+                            color: Color(0xFF0E3A5D),
+                          ),
+                        ),
+                        if (tipo.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            tipo,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontFamily: 'Georgia',
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        _EstadoPagoChip(onTap: onTapEstadoPago),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Sin alto fijo ni BoxFit.cover: así no se recorta ninguna
+                  // parte de la ilustración (la cama quedaba cortada abajo).
+                  Image.asset(
+                    'assets/bambu.jpg',
+                    width: imgWidth,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }

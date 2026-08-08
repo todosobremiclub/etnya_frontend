@@ -73,6 +73,28 @@ class Api {
     throw Exception('Error perfil (${res.statusCode})');
   }
 
+  // ======== PAGOS PROPIOS + RECIBO PDF ========
+  static Future<List<dynamic>> getPagosPropios() async {
+    final t = await token;
+    final res = await http.get(
+      Uri.parse('$_base/app/pagos'),
+      headers: _headers(t),
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return (data is List) ? data : <dynamic>[];
+    }
+    throw Exception('Error pagos (${res.statusCode})');
+  }
+
+  /// URL del comprobante en PDF de un pago propio. Lleva el token como
+  /// query param porque se abre como link normal (url_launcher), no como
+  /// un fetch con headers.
+  static Future<String> reciboPdfUrl(int pagoId) async {
+    final t = await token ?? '';
+    return '$_base/app/pagos/$pagoId/recibo.pdf?token=${Uri.encodeQueryComponent(t)}';
+  }
+
   // ======== CLASES (mensual) ========
   static Future<Map<String, dynamic>> getClases(String ym) async {
     final t = await token;
@@ -82,6 +104,65 @@ class Api {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
     throw Exception('Error clases (${res.statusCode})');
+  }
+
+  // ======== AVISAR NO ASISTENCIA (clase futura) ========
+  static Future<void> avisarNoAsistencia(int claseId, {String? comentario}) async {
+    final t = await token;
+    final res = await http.post(
+      Uri.parse('$_base/app/clases/$claseId/no-asistira'),
+      headers: _headers(t),
+      body: jsonEncode({
+        if (comentario != null && comentario.isNotEmpty) 'comentario': comentario,
+      }),
+    );
+    if (res.statusCode != 200) {
+      String msg = 'Error al avisar (${res.statusCode})';
+      try {
+        final j = jsonDecode(res.body);
+        if (j is Map && j['error'] != null) msg = j['error'].toString();
+      } catch (_) {}
+      throw Exception(msg);
+    }
+  }
+
+  // ======== TÉRMINOS Y CONDICIONES ========
+  static Future<void> aceptarTerminos() async {
+    final t = await token;
+    final res = await http.post(
+      Uri.parse('$_base/app/terminos/aceptar'),
+      headers: _headers(t),
+    );
+    if (res.statusCode != 200) {
+      throw Exception('Error al aceptar términos (${res.statusCode})');
+    }
+  }
+
+  // ======== MI RECORRIDO ========
+  static Future<Map<String, dynamic>> getRecorrido() async {
+    final t = await token;
+    final res = await http.get(
+      Uri.parse('$_base/app/recorrido'),
+      headers: _headers(t),
+    );
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('Error recorrido (${res.statusCode})');
+  }
+
+  // ======== TOKEN FCM (notificaciones push) ========
+  static Future<void> saveFcmToken(String fcmToken) async {
+    final t = await token;
+    if (t == null || t.isEmpty) return; // sin sesión, no hay a quién asociarlo
+    final res = await http.post(
+      Uri.parse('$_base/app/fcm-token'),
+      headers: _headers(t),
+      body: jsonEncode({'token': fcmToken}),
+    );
+    if (res.statusCode != 200) {
+      print('⚠️ No se pudo guardar el token FCM (${res.statusCode})');
+    }
   }
 
   // ======== NOVEDADES (NOTICIAS) ========

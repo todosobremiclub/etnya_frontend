@@ -12,26 +12,21 @@ class AgendaPage extends StatefulWidget {
 class _AgendaPageState extends State<AgendaPage> {
   bool _loading = true;
   String _nombre = '';
+  // Modalidad de la socia (ej. "Pilates Reformer"), igual que en el Home:
+  // si viene con aclaraciones después de un "-" (ej. "Pilates Reformer -
+  // 2 x semana"), se muestra solo la parte antes del guion.
+  String _tipoClase = '';
 
-  DateTime _weekStart = _mondayOf(DateTime.now());
+  DateTime _mes = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
-  // cache por mes: "YYYY-MM" -> lista completa de clases del mes
+  // cache por mes: "YYYY-MM" -> clases del mes ya con "_fecha" (DateTime) resuelta
   final Map<String, List<Map<String, dynamic>>> _cachePorMes = {};
-  // clases de la semana, agrupadas por día (YYYY-MM-DD)
-  Map<String, List<Map<String, dynamic>>> _clasesPorDia = {};
   // feriados (YYYY-MM-DD)
   final Set<String> _feriados = {};
 
-  static DateTime _mondayOf(DateTime d) {
-    final wd = d.weekday; // 1=Mon..7=Sun
-    return DateTime(d.year, d.month, d.day - (wd - 1));
-  }
+  List<Map<String, dynamic>> _clasesDelMes = [];
 
-  String _ymd(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  String _ym(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}';
+  String _ym(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
@@ -43,6 +38,8 @@ class _AgendaPageState extends State<AgendaPage> {
     try {
       final perfil = await Api.getPerfil();
       final nombre = (perfil['nombre'] ?? '').toString().trim();
+      final tipoClaseRaw = (perfil['tipo_clase'] ?? '').toString().trim();
+      final tipoClase = tipoClaseRaw.split('-').first.trim();
 
       // feriados desde backend
       final feriadosRaw = await Api.getFeriados();
@@ -53,11 +50,12 @@ class _AgendaPageState extends State<AgendaPage> {
         _feriados.add(ymd);
       }
 
-      await _loadWeekClasses();
+      await _loadMonthClasses();
 
       if (!mounted) return;
       setState(() {
         _nombre = nombre;
+        _tipoClase = tipoClase;
         _loading = false;
       });
     } catch (e) {
@@ -69,133 +67,149 @@ class _AgendaPageState extends State<AgendaPage> {
     }
   }
 
-  Future<void> _loadWeekClasses() async {
-    final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
+  Future<void> _loadMonthClasses() async {
+    final ym = _ym(_mes);
 
-    // meses involucrados en la semana
-    final meses = {
-      _ym(days.first),
-      _ym(days.last),
-    };
-
-    // cargar clases por mes usando el endpoint mensual existente
-    for (final ym in meses) {
-      if (!_cachePorMes.containsKey(ym)) {
-        final data = await Api.getClases(ym);
-        final items = ((data['items'] as List?) ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        _cachePorMes[ym] = items;
-      }
+    if (!_cachePorMes.containsKey(ym)) {
+      final data = await Api.getClases(ym);
+      final items = ((data['items'] as List?) ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      _cachePorMes[ym] = items;
     }
 
-    final byDay = <String, List<Map<String, dynamic>>>{};
-    for (final d in days) {
-      byDay[_ymd(d)] = [];
-    }
+    final items = _cachePorMes[ym] ?? [];
+    final procesadas = <Map<String, dynamic>>[];
 
-    // filtrar clases de la semana y descartar las que caen en feriado
-    for (final ym in meses) {
-      final items = _cachePorMes[ym] ?? [];
-      for (final c in items) {
-        DateTime? dt =
-            DateTime.tryParse((c['fecha_hora'] ?? '').toString());
-        if (dt == null) {
-          final f = DateTime.tryParse((c['fecha'] ?? '').toString());
-          final horaStr = (c['hora'] ?? '').toString();
-          if (f != null && horaStr.isNotEmpty) {
-            final parts = horaStr.split(':');
-            final h = int.tryParse(parts[0]) ?? 0;
-            final m = int.tryParse(parts[1]) ?? 0;
-            dt = DateTime(f.year, f.month, f.day, h, m);
-          } else {
-            dt = f;
-          }
+    for (final c in items) {
+      DateTime? dt = DateTime.tryParse((c['fecha_hora'] ?? '').toString());
+      if (dt == null) {
+        final f = DateTime.tryParse((c['fecha'] ?? '').toString());
+        final horaStr = (c['hora'] ?? '').toString();
+        if (f != null && horaStr.isNotEmpty) {
+          final partes = horaStr.split(':');
+          final h = int.tryParse(partes[0]) ?? 0;
+          final m = int.tryParse(partes.length > 1 ? partes[1] : '0') ?? 0;
+          dt = DateTime(f.year, f.month, f.day, h, m);
+        } else {
+          dt = f;
         }
-        if (dt == null) continue;
-
-        final dayOnly = DateTime(dt.year, dt.month, dt.day);
-        if (dayOnly.isBefore(_weekStart) ||
-            dayOnly.isAfter(_weekStart.add(const Duration(days: 6)))) {
-          continue; // fuera de la semana
-        }
-
-        final ymd = _ymd(dayOnly);
-
-        // si es feriado, NO se muestra
-        if (_feriados.contains(ymd)) continue;
-
-        byDay[ymd]?.add(c);
       }
+      if (dt == null) continue;
+
+      final dayOnly = DateTime(dt.year, dt.month, dt.day);
+      final ymd =
+          '${dayOnly.year}-${dayOnly.month.toString().padLeft(2, '0')}-${dayOnly.day.toString().padLeft(2, '0')}';
+      if (_feriados.contains(ymd)) continue; // el centro no abre ese día
+
+      procesadas.add({...c, '_fecha': dt});
     }
 
-    // ordenar clases por fecha/hora dentro del día
-    byDay.forEach((k, v) {
-      v.sort((a, b) {
-        DateTime? da =
-            DateTime.tryParse((a['fecha_hora'] ?? '').toString());
-        DateTime? db =
-            DateTime.tryParse((b['fecha_hora'] ?? '').toString());
-        return (da ?? DateTime(2000))
-            .compareTo(db ?? DateTime(2000));
-      });
-    });
+    procesadas.sort(
+      (a, b) => (a['_fecha'] as DateTime).compareTo(b['_fecha'] as DateTime),
+    );
 
     if (!mounted) return;
     setState(() {
-      _clasesPorDia = byDay;
+      _clasesDelMes = procesadas;
     });
   }
 
-  void _changeWeek(int delta) async {
+  void _changeMonth(int delta) async {
     setState(() {
       _loading = true;
-      _weekStart = _weekStart.add(Duration(days: 7 * delta));
+      _mes = DateTime(_mes.year, _mes.month + delta, 1);
     });
-    await _loadWeekClasses();
+    await _loadMonthClasses();
     if (!mounted) return;
     setState(() => _loading = false);
   }
 
-  String _weekLabel() {
-    final start = _weekStart;
-    final end = _weekStart.add(const Duration(days: 6));
+  String _mesLabel() {
     const meses = [
-      'enero',
-      'febrero',
-      'marzo',
-      'abril',
-      'mayo',
-      'junio',
-      'julio',
-      'agosto',
-      'septiembre',
-      'octubre',
-      'noviembre',
-      'diciembre'
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre'
     ];
-    if (start.month == end.month) {
-      return '${start.day}–${end.day} ${meses[start.month - 1]} ${start.year}';
-    }
-    return '${start.day}/${start.month} – ${end.day}/${end.month} ${end.year}';
+    return '${meses[_mes.month - 1]} ${_mes.year}';
   }
 
-  String _weekdayNameShort(DateTime d) {
+  String _weekdayShort(DateTime d) {
     const names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
     return names[d.weekday - 1];
   }
 
-  String _weekdayNameLong(DateTime d) {
-    const names = [
-      'Lunes',
-      'Martes',
-      'Miércoles',
-      'Jueves',
-      'Viernes',
-      'Sábado',
-      'Domingo'
-    ];
-    return names[d.weekday - 1];
+  Future<void> _avisarNoAsistencia(Map<String, dynamic> clase) async {
+    final id = clase['id'];
+    if (id == null) return;
+
+    final comentarioController = TextEditingController();
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('No voy a asistir'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Confirmás que NO vas a asistir a la clase?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: comentarioController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                hintText: 'Agregá un comentario (opcional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sí, avisar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    try {
+      final comentario = comentarioController.text.trim();
+      await Api.avisarNoAsistencia(
+        id as int,
+        comentario: comentario.isEmpty ? null : comentario,
+      );
+      if (!mounted) return;
+      setState(() {
+        clase['estado'] = 'con_aviso';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Listo, avisamos que no vas a asistir.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo enviar el aviso: $e')),
+      );
+    }
   }
 
   @override
@@ -208,8 +222,15 @@ class _AgendaPageState extends State<AgendaPage> {
       );
     }
 
-    final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
-    final todayKey = _ymd(DateTime.now());
+    final now = DateTime.now();
+    final futuras = _clasesDelMes
+        .where((c) => (c['_fecha'] as DateTime).isAfter(now))
+        .toList(); // ya vienen ordenadas de más próxima a más lejana
+    final anteriores = _clasesDelMes
+        .where((c) => !(c['_fecha'] as DateTime).isAfter(now))
+        .toList()
+        .reversed
+        .toList(); // más reciente primero
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F5),
@@ -252,18 +273,18 @@ class _AgendaPageState extends State<AgendaPage> {
 
             const SizedBox(height: 8),
 
-            // Navegación de semana
+            // Navegación de mes
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () => _changeWeek(-1),
+                    onPressed: () => _changeMonth(-1),
                     icon: const Icon(Icons.chevron_left),
                   ),
                   Expanded(
                     child: Text(
-                      _weekLabel(),
+                      _mesLabel(),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 16,
@@ -273,7 +294,7 @@ class _AgendaPageState extends State<AgendaPage> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () => _changeWeek(1),
+                    onPressed: () => _changeMonth(1),
                     icon: const Icon(Icons.chevron_right),
                   ),
                 ],
@@ -282,38 +303,90 @@ class _AgendaPageState extends State<AgendaPage> {
 
             const SizedBox(height: 8),
 
-            // Panel tipo calendario (cajas de día)
+            // Panel con las clases del mes: próximas y anteriores
             Expanded(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFFA3D8C3),
                   borderRadius: BorderRadius.circular(36),
                 ),
-                child: GridView.builder(
-                  itemCount: days.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2, // 2 columnas
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 3 / 4,
-                  ),
-                  itemBuilder: (context, index) {
-                    final d = days[index];
-                    final ymd = _ymd(d);
-                    final clases = _clasesPorDia[ymd] ?? [];
-                    final isToday = ymd == todayKey;
-
-                    return _DayBox(
-                      date: d,
-                      clases: clases,
-                      isToday: isToday,
-                      weekdayShort: _weekdayNameShort(d),
-                      weekdayLong: _weekdayNameLong(d),
-                    );
-                  },
-                ),
+                child: (futuras.isEmpty && anteriores.isEmpty)
+                    ? const Center(
+                        child: Text(
+                          'No tenés clases este mes',
+                          style: TextStyle(
+                            fontFamily: 'Georgia',
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        children: [
+                          if (futuras.isNotEmpty) ...[
+                            const _SectionLabel(text: 'Próximas'),
+                            const SizedBox(height: 8),
+                            GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: futuras.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 0.68,
+                              ),
+                              itemBuilder: (context, i) {
+                                final c = futuras[i];
+                                return _ClaseCell(
+                                  clase: c,
+                                  weekdayShort:
+                                      _weekdayShort(c['_fecha'] as DateTime),
+                                  esFutura: true,
+                                  tipoClase: _tipoClase,
+                                  onAvisar: () => _avisarNoAsistencia(c),
+                                );
+                              },
+                            ),
+                          ],
+                          if (futuras.isNotEmpty && anteriores.isNotEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 10),
+                              child: Divider(color: Colors.black26, height: 1),
+                            ),
+                          if (anteriores.isNotEmpty) ...[
+                            const _SectionLabel(text: 'Anteriores'),
+                            const SizedBox(height: 8),
+                            GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: anteriores.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 0.68,
+                              ),
+                              itemBuilder: (context, i) {
+                                final c = anteriores[i];
+                                return _ClaseCell(
+                                  clase: c,
+                                  weekdayShort:
+                                      _weekdayShort(c['_fecha'] as DateTime),
+                                  esFutura: false,
+                                  tipoClase: _tipoClase,
+                                  onAvisar: null,
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
               ),
             ),
 
@@ -325,136 +398,166 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 }
 
-/// Caja de un día en el calendario semanal
-class _DayBox extends StatelessWidget {
-  final DateTime date;
-  final List<Map<String, dynamic>> clases;
-  final bool isToday;
-  final String weekdayShort;
-  final String weekdayLong;
-
-  const _DayBox({
-    required this.date,
-    required this.clases,
-    required this.isToday,
-    required this.weekdayShort,
-    required this.weekdayLong,
-  });
+/// Título chico y discreto para separar "Próximas" de "Anteriores"
+/// dentro del mismo listado (separación sutil, no dos pestañas distintas).
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    final fechaLabel = '${date.day}/${date.month}';
+    return Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontFamily: 'Georgia',
+        fontWeight: FontWeight.w700,
+        fontSize: 11,
+        letterSpacing: 0.6,
+        color: Colors.black54,
+      ),
+    );
+  }
+}
+
+/// Celda compacta de una clase (pasada o futura) para la grilla de 4 por fila.
+class _ClaseCell extends StatelessWidget {
+  final Map<String, dynamic> clase;
+  final String weekdayShort;
+  final bool esFutura;
+  final String tipoClase;
+  final VoidCallback? onAvisar;
+
+  const _ClaseCell({
+    required this.clase,
+    required this.weekdayShort,
+    required this.esFutura,
+    required this.tipoClase,
+    required this.onAvisar,
+  });
+
+  ({String label, Color color, IconData icon})? _estadoInfo(String estado) {
+    switch (estado) {
+      case 'asistio':
+        return (
+          label: 'Asistió',
+          color: const Color(0xFF4FBF75),
+          icon: Icons.check_circle,
+        );
+      case 'con_aviso':
+        return (
+          label: 'Avisó',
+          color: const Color(0xFFE0A83B),
+          icon: Icons.info,
+        );
+      case 'sin_aviso':
+        return (
+          label: 'Sin aviso',
+          color: const Color(0xFFD9534F),
+          icon: Icons.cancel,
+        );
+      default:
+        return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = clase['_fecha'] as DateTime;
+    final estado = (clase['estado'] ?? '').toString();
+    final info = _estadoInfo(estado);
+    final hhmm =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+    // En clases futuras sin estado registrado todavía, mostramos el botón.
+    final mostrarBotonAviso = esFutura && info == null && onAvisar != null;
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFD9EFEF),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isToday ? const Color(0xFF4A148C) : Colors.black26,
-          width: isToday ? 2 : 0.5,
-        ),
-        boxShadow: isToday
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF4A148C).withOpacity(0.25),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : [],
-      ),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Encabezado del día
-          Row(
-            children: [
-              Text(
-                weekdayShort,
-                style: TextStyle(
-                  fontFamily: 'Georgia',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: isToday ? const Color(0xFF4A148C) : Colors.black87,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                fechaLabel,
-                style: TextStyle(
-                  fontFamily: 'Georgia',
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                  color: isToday ? const Color(0xFF4A148C) : Colors.black54,
-                ),
-              ),
-            ],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
           ),
-
-          const SizedBox(height: 4),
-
-          if (clases.isEmpty)
-            const Text(
-              'Sin clases',
-              style: TextStyle(
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            weekdayShort,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+              color: Color(0xFF0E3A5D),
+            ),
+          ),
+          Text(
+            '${dt.day}/${dt.month}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: Color(0xFF0E3A5D),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '$hhmm hs',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontSize: 10,
+              color: Colors.black54,
+            ),
+          ),
+          if (tipoClase.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              tipoClase,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 fontFamily: 'Georgia',
-                fontSize: 12,
-                color: Colors.black54,
+                fontWeight: FontWeight.w500,
+                fontSize: 9,
+                color: Color(0xFF8B6FC9),
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          if (info != null)
+            Icon(info.icon, size: 16, color: info.color)
+          else if (mostrarBotonAviso)
+            InkWell(
+              onTap: onAvisar,
+              borderRadius: BorderRadius.circular(8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  'No voy',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Georgia',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black38,
+                    decoration: TextDecoration.underline,
+                    decorationColor: Colors.black26,
+                  ),
+                ),
               ),
             )
           else
-            Expanded(
-              child: ListView.builder(
-                itemCount: clases.length,
-                padding: EdgeInsets.zero,
-                itemBuilder: (context, i) {
-                  final c = clases[i];
-                  final horaStr = (c['hora'] ?? '').toString();
-                  final sede = (c['sede'] ?? '').toString();
-                  final tipo = (c['tipo'] ?? '').toString();
-                  final estado = (c['estado'] ?? '').toString();
-
-                  final hhmm =
-                      horaStr.length >= 5 ? horaStr.substring(0, 5) : horaStr;
-                  final tipoTxt =
-                      tipo.isNotEmpty ? tipo : 'Clase normal';
-
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          hhmm,
-                          style: const TextStyle(
-                            fontFamily: 'Georgia',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          sede,
-                          style: const TextStyle(
-                            fontFamily: 'Georgia',
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          tipoTxt +
-                              (estado.isNotEmpty ? ' · $estado' : ''),
-                          style: const TextStyle(
-                            fontFamily: 'Georgia',
-                            fontSize: 11,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
+            const SizedBox(height: 16),
         ],
       ),
     );
