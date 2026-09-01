@@ -130,6 +130,11 @@ class _GateState extends State<Gate> {
   /// Le pregunta al backend si esta socia ya aceptó los términos. Se guarda
   /// ahí (no en el dispositivo) para que quede registrado de forma
   /// permanente y no vuelva a preguntarse en otro celular/reinstalación.
+  /// Le pregunta al backend si esta socia ya aceptó, dentro del último año,
+  /// el formulario de términos, condiciones y riesgos médicos. Se guarda
+  /// ahí (no en el dispositivo) para que quede registrado de forma
+  /// permanente y no vuelva a preguntarse en otro celular/reinstalación,
+  /// y para que el backend pueda hacerlo vencer al año.
   Future<void> _checkTerminos() async {
     if (!mounted) return;
     setState(() => _acceptedTerms = null);

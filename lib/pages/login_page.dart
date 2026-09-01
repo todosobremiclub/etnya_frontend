@@ -13,6 +13,7 @@ class _LoginPageState extends State<LoginPage> {
   final _nroCtrl = TextEditingController();
   final _apeCtrl = TextEditingController();
   bool _loading = false;
+  bool _recordarme = false;
 
   Future<void> _submit() async {
     setState(() => _loading = true);
@@ -29,31 +30,147 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Ingreso', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              Center(
+                child: Image.asset('assets/logo.jpeg', height: 140),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  'PILATES',
+                  style: TextStyle(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 4,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Center(
+                child: Text(
+                  '¡Bienvenida/o!',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  'Iniciá sesión para continuar',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ),
+              const SizedBox(height: 28),
               TextField(
                 controller: _nroCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Número de socio'),
+                decoration: InputDecoration(
+                  labelText: 'Número de socio',
+                  prefixIcon: Icon(Icons.badge_outlined, color: colorScheme.primary),
+                  filled: true,
+                  fillColor: colorScheme.primary.withOpacity(0.06),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               TextField(
                 controller: _apeCtrl,
-                decoration: const InputDecoration(labelText: 'Apellido'),
+                decoration: InputDecoration(
+                  labelText: 'Apellido',
+                  prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
+                  filled: true,
+                  fillColor: colorScheme.primary.withOpacity(0.06),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _recordarme,
+                    activeColor: colorScheme.primary,
+                    onChanged: (v) => setState(() => _recordarme = v ?? false),
+                  ),
+                  const Text('Recordarme'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  onPressed: _loading ? null : _submit,
+                  child: _loading
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Ingresar',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                ),
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  child: Text(_loading ? 'Ingresando…' : 'Ingresar'),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Colors.white,
+                      child: Icon(Icons.person_add_alt_1, color: colorScheme.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(color: Colors.black87, fontSize: 13),
+                          children: [
+                            const TextSpan(text: '¿Todavía no sos socia?\n'),
+                            TextSpan(
+                              text: 'Registrate',
+                              style: TextStyle(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
                 ),
               ),
             ],
