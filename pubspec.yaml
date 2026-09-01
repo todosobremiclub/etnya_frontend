@@ -22,9 +22,16 @@ dependencies:
   url_launcher: ^6.3.0
   font_awesome_flutter: ^11.0.0
 
+  # 📷 Foto de perfil local (solo se guarda en el dispositivo de la socia)
+  image_picker: ^1.1.2
+  path_provider: ^2.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # 🎨 Generador del ícono de la app (logo Etnya)
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -32,5 +39,18 @@ flutter:
   assets:
     - assets/logo.jpeg
     - assets/bambu.jpg
+    - assets/icon/etnya_icon.png
+    - assets/icon/etnya_icon_foreground.png
+
+# 🎨 Configuración del ícono de la app (se genera con:
+# flutter pub run flutter_launcher_icons)
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/etnya_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/etnya_icon_foreground.png"
+  remove_alpha_ios: true
+  min_sdk_android: 21
 
 
