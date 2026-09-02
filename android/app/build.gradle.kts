@@ -23,13 +23,13 @@ FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
 android {
     namespace = "com.etnya.pilates"
     compileSdk = 36
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.etnya.pilates"
         minSdk = flutter.minSdkVersion
-        targetSdk = 34
-        versionCode = 1
+        targetSdk = 35
+        versionCode = 30
         versionName = "1.0.0"
     }
 
