@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'api/api.dart';
 import 'pages/login_page.dart';
@@ -15,6 +19,13 @@ import 'pages/terms_page.dart';
 import 'widgets/social_footer.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Foto de perfil: se guarda SOLO en el dispositivo de la socia (no se
+/// sube al backend), por eso alcanza con un archivo local + esta clave
+/// en SharedPreferences con la ruta a ese archivo.
+const _kFotoPerfilPref = 'foto_perfil_local';
+
+enum _AccionFoto { camara, galeria, quitar }
 
 /// handler de FCM en segundo plano (solo mobile)
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -75,12 +86,22 @@ class _GateState extends State<Gate> {
   // Future de la tarjeta "Próxima clase" (se crea una sola vez al entrar al Home)
   Future<Map<String, dynamic>?>? _proximaClaseFuture;
 
+  // Perfil y recorrido del Home: se piden una sola vez y se comparten
+  // entre las tarjetas (evita pedirle lo mismo varias veces al backend).
+  Future<Map<String, dynamic>>? _perfilFuture;
+  Future<Map<String, dynamic>>? _recorridoFuture;
+
+  // Ruta al archivo local de la foto de perfil (null = todavía no eligió
+  // ninguna). Vive solo en este dispositivo.
+  String? _fotoLocalPath;
+
   @override
   void initState() {
     super.initState();
     if (!kIsWeb) {
       _setupFCM();
     }
+    _cargarFotoLocal();
     Api.token.then((t) {
       if (!mounted) return;
       setState(() {
@@ -89,6 +110,83 @@ class _GateState extends State<Gate> {
       });
       if (t != null) _checkTerminos();
     });
+  }
+
+  Future<void> _cargarFotoLocal() async {
+    final sp = await SharedPreferences.getInstance();
+    final path = sp.getString(_kFotoPerfilPref);
+    if (path != null && await File(path).exists()) {
+      if (mounted) setState(() => _fotoLocalPath = path);
+    }
+  }
+
+  /// Deja elegir una foto de perfil (cámara o galería). Se guarda una
+  /// copia en el almacenamiento local de la app y solo la ruta en
+  /// SharedPreferences: nunca se sube al backend, es solo para esta socia
+  /// en este dispositivo.
+  Future<void> _elegirFoto() async {
+    final accion = await showModalBottomSheet<_AccionFoto>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, _AccionFoto.camara),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, _AccionFoto.galeria),
+            ),
+            if (_fotoLocalPath != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Quitar foto'),
+                onTap: () => Navigator.pop(ctx, _AccionFoto.quitar),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (accion == null) return; // cerró el menú sin elegir nada
+
+    if (accion == _AccionFoto.quitar) {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove(_kFotoPerfilPref);
+      if (mounted) setState(() => _fotoLocalPath = null);
+      return;
+    }
+
+    final origen =
+        accion == _AccionFoto.camara ? ImageSource.camera : ImageSource.gallery;
+
+    XFile? file;
+    try {
+      file = await ImagePicker()
+          .pickImage(source: origen, imageQuality: 80, maxWidth: 800);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo acceder a la foto: $e')),
+      );
+      return;
+    }
+    if (file == null) return; // canceló el picker
+
+    final dir = await getApplicationDocumentsDirectory();
+    final destino = '${dir.path}/foto_perfil_local.jpg';
+    await File(file.path).copy(destino);
+
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kFotoPerfilPref, destino);
+
+    if (mounted) setState(() => _fotoLocalPath = destino);
   }
 
   Future<void> _setupFCM() async {
@@ -242,26 +340,43 @@ class _GateState extends State<Gate> {
     return mejor;
   }
 
+  // Refresca los datos del Home (perfil, próxima clase, recorrido).
+  // Se usa al volver de otra pantalla (ej. Pagos) para que tarjetas como
+  // "Mi plan de pago" no se queden mostrando el dato que había cuando se
+  // abrió la app la primera vez (el perfil se pedía una sola vez y nunca
+  // se volvía a consultar).
+  void _refrescarHome() {
+    if (!mounted) return;
+    setState(() {
+      _perfilFuture = Api.getPerfil();
+      _proximaClaseFuture = _fetchProximaClase();
+      _recorridoFuture = Api.getRecorrido();
+    });
+  }
+
   // Navegación a secciones
-  void _goPerfil() {
-    Navigator.push(
+  void _goPerfil() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const PerfilPage()),
     );
+    _refrescarHome();
   }
 
-  void _goAgenda() {
-    Navigator.push(
+  void _goAgenda() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AgendaPage()),
     );
+    _refrescarHome();
   }
 
-  void _goPagos() {
-    Navigator.push(
+  void _goPagos() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const PagosPage()),
     );
+    _refrescarHome();
   }
 
   void _goNovedades() {
@@ -278,11 +393,12 @@ class _GateState extends State<Gate> {
     );
   }
 
-  void _goMiRecorrido() {
-    Navigator.push(
+  void _goMiRecorrido() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const MiRecorridoPage()),
     );
+    _refrescarHome();
   }
 
   @override
@@ -328,79 +444,75 @@ class _GateState extends State<Gate> {
 
     // 5) Home
     _proximaClaseFuture ??= _fetchProximaClase();
+    _perfilFuture ??= Api.getPerfil();
+    _recorridoFuture ??= Api.getRecorrido();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F5),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 6),
-              _Header(onLogout: _onLogout),
-              const SizedBox(height: 16),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 16),
+          children: [
+            _HomeHeader(
+              perfilFuture: _perfilFuture!,
+              onNotificaciones: _goNotificaciones,
+              onLogout: _onLogout,
+            ),
+            const SizedBox(height: 16),
 
-              _ProximaClaseCard(
-                future: _proximaClaseFuture!,
-                onTapEstadoPago: _goPagos,
-              ),
+            _PerfilCard(
+              perfilFuture: _perfilFuture!,
+              fotoLocalPath: _fotoLocalPath,
+              onTapFoto: _elegirFoto,
+              onTap: _goPerfil,
+            ),
 
-              const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-              // Menú principal
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    _MenuRow(
-                      icon: Icons.person_outline,
-                      label: 'Perfil',
-                      accentColor: const Color(0xFF8ECFB5),
-                      onTap: _goPerfil,
-                    ),
-                    const SizedBox(height: 10),
-                    _MenuRow(
-                      icon: Icons.self_improvement,
-                      label: 'Clases',
-                      accentColor: const Color(0xFF4FBF75),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _ProximaClaseCard(
+                      future: _proximaClaseFuture!,
                       onTap: _goAgenda,
                     ),
-                    const SizedBox(height: 10),
-                    _MenuRow(
-                      icon: Icons.credit_card,
-                      label: 'Pagos',
-                      accentColor: const Color(0xFF86D3D3),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _PlanPagoCard(
+                      perfilFuture: _perfilFuture!,
                       onTap: _goPagos,
                     ),
-                    const SizedBox(height: 10),
-                    _MenuRow(
-                      icon: Icons.campaign_outlined,
-                      label: 'Novedades',
-                      accentColor: const Color(0xFFBBA3EA),
-                      onTap: _goNovedades,
-                    ),
-                    const SizedBox(height: 10),
-                    _MenuRow(
-                      icon: Icons.spa_outlined,
-                      label: 'Mi recorrido',
-                      accentColor: const Color(0xFF9D84D0),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _ProgresoCard(
+                      recorridoFuture: _recorridoFuture!,
                       onTap: _goMiRecorrido,
                     ),
-                    const SizedBox(height: 10),
-                    _MenuRow(
-                      icon: Icons.notifications_outlined,
-                      label: 'Notificaciones',
-                      accentColor: const Color(0xFF6FA8DC),
-                      onTap: _goNotificaciones,
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _NovedadesCard(onTap: _goNovedades),
+                  ),
+                ],
               ),
+            ),
 
-              const SocialFooter(),
-            ],
-          ),
+            const SizedBox(height: 16),
+            const SocialFooter(),
+          ],
         ),
       ),
     );
@@ -409,24 +521,30 @@ class _GateState extends State<Gate> {
 
 // ======================= WIDGETS HOME =======================
 
-class _Header extends StatelessWidget {
+/// Encabezado del Home: saludo + logo + campanita de notificaciones +
+/// cerrar sesión (sin el subtítulo "¿Lista/o para tu momento de pilates?").
+class _HomeHeader extends StatelessWidget {
+  final Future<Map<String, dynamic>> perfilFuture;
+  final VoidCallback onNotificaciones;
   final VoidCallback onLogout;
 
-  const _Header({super.key, required this.onLogout});
+  const _HomeHeader({
+    required this.perfilFuture,
+    required this.onNotificaciones,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const SizedBox(width: 24),
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
-            future: Api.getPerfil(),
+            future: perfilFuture,
             builder: (context, snap) {
               String saludo = 'Hola! 👋';
               if (snap.hasData) {
-                final p = snap.data!;
-                final nombre = (p['nombre'] ?? '').toString().trim();
+                final nombre = (snap.data!['nombre'] ?? '').toString().trim();
                 if (nombre.isNotEmpty) saludo = 'Hola, $nombre 👋';
               }
               return Text(
@@ -442,76 +560,191 @@ class _Header extends StatelessWidget {
         ),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: Image.network(
-            'https://etnya.onrender.com/admin-panel/logo.jpeg',
-            width: 40,
-            height: 40,
+          child: Image.asset(
+            'assets/logo.jpeg',
+            width: 38,
+            height: 38,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.image_not_supported, size: 40),
           ),
+        ),
+        IconButton(
+          onPressed: onNotificaciones,
+          icon: const Icon(Icons.notifications_none_rounded),
+          tooltip: 'Notificaciones',
         ),
         IconButton(
           onPressed: onLogout,
           icon: const Icon(Icons.logout),
+          tooltip: 'Cerrar sesión',
         ),
       ],
     );
   }
 }
 
-/// Indicador chico y discreto del estado de pago (debajo de "Próxima clase"):
-/// signo "$" verde si está al día, rojo si está en mora. Lleva a Pagos.
-class _EstadoPagoChip extends StatelessWidget {
+/// Tarjeta de perfil: foto (local, editable), nombre, número de socia y
+/// tres datos rápidos (sede, fecha de ingreso y días desde que ingresó).
+class _PerfilCard extends StatelessWidget {
+  final Future<Map<String, dynamic>> perfilFuture;
+  final String? fotoLocalPath;
+  final VoidCallback onTapFoto;
   final VoidCallback onTap;
 
-  const _EstadoPagoChip({required this.onTap});
+  const _PerfilCard({
+    required this.perfilFuture,
+    required this.fotoLocalPath,
+    required this.onTapFoto,
+    required this.onTap,
+  });
+
+  String _formatFecha(String? iso) {
+    if (iso == null || iso.isEmpty) return '-';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return '-';
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  }
+
+  int? _diasDesdeIngreso(String? iso) {
+    if (iso == null || iso.isEmpty) return null;
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return null;
+    return DateTime.now().difference(dt).inDays;
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>>(
-      future: Api.getPerfil(),
+      future: perfilFuture,
       builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-
-        final estado = (snap.data!['estado_pago'] ?? '').toString();
-        final alDia = estado == 'al_dia';
-        final color = alDia ? const Color(0xFF4FBF75) : const Color(0xFFD9534F);
+        final p = snap.data;
+        final nombreCompleto = p == null
+            ? ''
+            : '${(p['nombre'] ?? '').toString().trim()} ${(p['apellido'] ?? '').toString().trim()}'
+                .trim();
+        final numero = p?['numero']?.toString() ?? '-';
+        final sede = (p?['sede'] ?? '').toString();
+        final inicioIso = p?['inicio_clases']?.toString();
+        final desde = _formatFecha(inicioIso);
+        final dias = _diasDesdeIngreso(inicioIso);
 
         return InkWell(
+          borderRadius: BorderRadius.circular(24),
           onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 18,
-                  height: 18,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: color, width: 1.3),
-                  ),
-                  child: Text(
-                    '\$',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: color,
-                    ),
-                  ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
                 ),
-                const SizedBox(width: 5),
-                Text(
-                  alDia ? 'Al día' : 'En mora',
-                  style: TextStyle(
-                    fontFamily: 'Georgia',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: color.withOpacity(0.85),
-                  ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 32,
+                          backgroundColor: const Color(0xFFE5D4F9),
+                          backgroundImage: fotoLocalPath != null
+                              ? FileImage(File(fotoLocalPath!))
+                              : null,
+                          child: fotoLocalPath == null
+                              ? const Icon(Icons.person,
+                                  size: 34, color: Color(0xFF9D84D0))
+                              : null,
+                        ),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: InkWell(
+                            onTap: onTapFoto,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: const Icon(Icons.edit,
+                                  size: 13, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            nombreCompleto.isEmpty ? '—' : nombreCompleto,
+                            style: const TextStyle(
+                              fontFamily: 'Georgia',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              color: Color(0xFF0E3A5D),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Nro. de Socia',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          Text(
+                            numero,
+                            style: const TextStyle(
+                                fontSize: 14, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _StatMini(
+                        icon: Icons.location_on_outlined,
+                        label: 'SEDE',
+                        value: sede.isEmpty ? '-' : sede,
+                      ),
+                    ),
+                    Container(width: 1, height: 32, color: Colors.black12),
+                    Expanded(
+                      child: _StatMini(
+                        icon: Icons.calendar_today_outlined,
+                        label: 'DESDE',
+                        value: desde,
+                      ),
+                    ),
+                    Container(width: 1, height: 32, color: Colors.black12),
+                    Expanded(
+                      child: _StatMini(
+                        icon: Icons.spa_outlined,
+                        label: 'DÍAS EN ETNYA',
+                        value: dias != null ? '$dias' : '-',
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -522,69 +755,42 @@ class _EstadoPagoChip extends StatelessWidget {
   }
 }
 
-/// Fila del menú principal del Home (icono + label + flecha, con barra de color)
-class _MenuRow extends StatelessWidget {
+/// Un dato chico (icono + etiqueta + valor), usado en la fila de
+/// Sede / Desde / Días en Etnya de la tarjeta de perfil.
+class _StatMini extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color accentColor;
-  final VoidCallback onTap;
+  final String value;
 
-  const _MenuRow({
-    required this.icon,
-    required this.label,
-    required this.accentColor,
-    required this.onTap,
-  });
+  const _StatMini({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          // fondo con un tinte suave del color de la sección (en vez de blanco puro)
-          color: Color.alphaBlend(accentColor.withOpacity(0.10), Colors.white),
-          borderRadius: BorderRadius.circular(18),
-          border: Border(left: BorderSide(color: accentColor, width: 4)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+    return Column(
+      children: [
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+            color: Colors.black54,
+          ),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: accentColor.withOpacity(0.5), width: 1.5),
-              ),
-              alignment: Alignment.center,
-              child: Icon(icon, color: accentColor, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Georgia',
-                  color: Color(0xFF0E3A5D),
-                ),
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.black45, size: 20),
-          ],
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Georgia',
+            color: Color(0xFF0E3A5D),
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -592,9 +798,9 @@ class _MenuRow extends StatelessWidget {
 /// Tarjeta "Próxima clase" del Home, con datos reales de la API.
 class _ProximaClaseCard extends StatelessWidget {
   final Future<Map<String, dynamic>?> future;
-  final VoidCallback onTapEstadoPago;
+  final VoidCallback onTap;
 
-  const _ProximaClaseCard({required this.future, required this.onTapEstadoPago});
+  const _ProximaClaseCard({required this.future, required this.onTap});
 
   String _labelFecha(DateTime dt) {
     final now = DateTime.now();
@@ -634,133 +840,392 @@ class _ProximaClaseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 16, 10, 16),
-      decoration: BoxDecoration(
-        // mismo tono claro que el fondo de la ilustración, para que se vea todo integrado
-        color: const Color(0xFFF5F6F8),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: FutureBuilder<Map<String, dynamic>?>(
-        future: future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const SizedBox(
-              height: 70,
-              child: Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1E9FB),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: FutureBuilder<Map<String, dynamic>?>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 90,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
                 ),
-              ),
-            );
-          }
+              );
+            }
 
-          final clase = snap.data;
-          if (clase == null) {
+            final clase = snap.data;
+            if (clase == null) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.event_available, color: Color(0xFF8B6FC9), size: 18),
+                  SizedBox(height: 8),
+                  Text(
+                    'Sin clases próximas agendadas',
+                    style: TextStyle(
+                      fontFamily: 'Georgia',
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Color(0xFF0E3A5D),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            final dt = clase['_fecha'] as DateTime;
+            final tipo = _tipoAMostrar(clase);
+            final hora =
+                '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: const [
-                    Icon(Icons.event_available, color: Color(0xFF8B6FC9), size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
+                    Icon(Icons.calendar_today, color: Color(0xFF8B6FC9), size: 14),
+                    SizedBox(width: 6),
+                    Text(
+                      'PRÓXIMA CLASE',
+                      style: TextStyle(
+                        color: Color(0xFF8B6FC9),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _labelFecha(dt),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Georgia',
+                    color: Color(0xFF0E3A5D),
+                  ),
+                ),
+                Text(
+                  '$hora hs',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF8B6FC9),
+                  ),
+                ),
+                if (tipo.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tipo,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'Georgia',
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta "Mi plan de pago": modalidad del socio y próximo vencimiento
+/// (en verde si está al día, en rojo si está en mora), con acceso a Pagos.
+class _PlanPagoCard extends StatelessWidget {
+  final Future<Map<String, dynamic>> perfilFuture;
+  final VoidCallback onTap;
+
+  const _PlanPagoCard({required this.perfilFuture, required this.onTap});
+
+  String _formatFecha(String iso) {
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE3F3EA),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: perfilFuture,
+          builder: (context, snap) {
+            final p = snap.data;
+            final plan = (p?['tipo_clase'] ?? '').toString().trim();
+            final planLabel = plan.isEmpty ? 'Mi plan' : plan.split('-').first.trim();
+            final vencStr = (p?['proximo_vencimiento'] ?? '').toString();
+            final alDia = (p?['estado_pago'] ?? '').toString() == 'al_dia';
+            final colorEstado =
+                alDia ? const Color(0xFF3E9C6B) : const Color(0xFFD9534F);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.credit_card, color: Color(0xFF3E9C6B), size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'MI PLAN DE PAGO',
+                      style: TextStyle(
+                        color: Color(0xFF3E9C6B),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  planLabel,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Georgia',
+                    color: Color(0xFF0E3A5D),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Próximo vencimiento',
+                  style: TextStyle(fontSize: 10, color: Colors.black54),
+                ),
+                Text(
+                  vencStr.isEmpty ? '-' : _formatFecha(vencStr),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: colorEstado,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Ver detalles',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF3E9C6B),
+                          ),
+                        ),
+                        SizedBox(width: 4),
+                        Icon(Icons.chevron_right, size: 14, color: Color(0xFF3E9C6B)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta "Progreso": clases realizadas (acumulado) y hace cuántos meses
+/// es socia. Lleva a "Mi recorrido" para el detalle completo.
+class _ProgresoCard extends StatelessWidget {
+  final Future<Map<String, dynamic>> recorridoFuture;
+  final VoidCallback onTap;
+
+  const _ProgresoCard({required this.recorridoFuture, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: recorridoFuture,
+          builder: (context, snap) {
+            final data = snap.data;
+            final clasesTotales = (data?['clases_totales'] ?? 0) as int;
+            final diasPracticando = data?['dias_practicando'] as int?;
+            final meses =
+                diasPracticando != null ? (diasPracticando / 30).floor() : null;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Progreso',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0E3A5D),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 46,
+                      height: 46,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 46,
+                            height: 46,
+                            child: CircularProgressIndicator(
+                              value: 1,
+                              strokeWidth: 4,
+                              valueColor:
+                                  AlwaysStoppedAnimation(Color(0xFF4FBF75)),
+                              backgroundColor: Color(0xFFDDEFE2),
+                            ),
+                          ),
+                          Text(
+                            '$clasesTotales',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF4FBF75),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
                       child: Text(
-                        'No tenés clases próximas agendadas',
+                        'Clases\nrealizadas',
                         style: TextStyle(
-                          fontFamily: 'Georgia',
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: Color(0xFF0E3A5D),
+                          fontSize: 11,
+                          color: Colors.black54,
+                          height: 1.1,
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                _EstadoPagoChip(onTap: onTapEstadoPago),
+                const SizedBox(height: 8),
+                Text(
+                  meses != null ? '$meses meses como socia' : '-',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
               ],
             );
-          }
+          },
+        ),
+      ),
+    );
+  }
+}
 
-          final dt = clase['_fecha'] as DateTime;
-          final tipo = _tipoAMostrar(clase);
-          final hora =
-              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+/// Tarjeta "Novedades": acceso directo a las noticias de Etnya.
+class _NovedadesCard extends StatelessWidget {
+  final VoidCallback onTap;
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              // La ilustración ocupa ~45% del ancho de la tarjeta,
-              // acercándose al bloque de la fecha.
-              final imgWidth = (constraints.maxWidth * 0.45).clamp(120.0, 190.0);
+  const _NovedadesCard({required this.onTap});
 
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: const [
-                            Icon(Icons.calendar_today,
-                                color: Color(0xFF8B6FC9), size: 14),
-                            SizedBox(width: 6),
-                            Text(
-                              'PRÓXIMA CLASE',
-                              style: TextStyle(
-                                color: Color(0xFF8B6FC9),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_labelFecha(dt)} • $hora hs',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Georgia',
-                            color: Color(0xFF0E3A5D),
-                          ),
-                        ),
-                        if (tipo.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            tipo,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontFamily: 'Georgia',
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 4),
-                        _EstadoPagoChip(onTap: onTapEstadoPago),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  // Sin alto fijo ni BoxFit.cover: así no se recorta ninguna
-                  // parte de la ilustración (la cama quedaba cortada abajo).
-                  Image.asset(
-                    'assets/bambu.jpg',
-                    width: imgWidth,
-                    fit: BoxFit.contain,
-                  ),
-                ],
-              );
-            },
-          );
-        },
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                color: Color(0xFFBBA3EA),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.campaign_outlined, size: 16, color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Novedades',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Georgia',
+                color: Color(0xFF0E3A5D),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Enterate de todo lo nuevo en Etnya 💜',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ],
+        ),
       ),
     );
   }

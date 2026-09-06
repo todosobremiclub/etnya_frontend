@@ -278,24 +278,33 @@ class _AgendaPageState extends State<AgendaPage> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => _changeMonth(-1),
-                    icon: const Icon(Icons.chevron_left),
+                  _NavMesButton(
+                    icon: Icons.chevron_left,
+                    onTap: () => _changeMonth(-1),
                   ),
                   Expanded(
-                    child: Text(
-                      _mesLabel(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Georgia',
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.calendar_today,
+                            size: 15, color: Color(0xFF0E3A5D)),
+                        const SizedBox(width: 6),
+                        Text(
+                          _mesLabel(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Georgia',
+                            color: Color(0xFF0E3A5D),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => _changeMonth(1),
-                    icon: const Icon(Icons.chevron_right),
+                  _NavMesButton(
+                    icon: Icons.chevron_right,
+                    onTap: () => _changeMonth(1),
                   ),
                 ],
               ),
@@ -303,91 +312,132 @@ class _AgendaPageState extends State<AgendaPage> {
 
             const SizedBox(height: 8),
 
-            // Panel con las clases del mes: próximas y anteriores
+            // Clases del mes: un panel verde para "Próximas clases" y,
+            // debajo, un panel lila para "Clases anteriores" (cada uno solo
+            // tan alto como su contenido, como en el diseño de referencia).
             Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFA3D8C3),
-                  borderRadius: BorderRadius.circular(36),
-                ),
-                child: (futuras.isEmpty && anteriores.isEmpty)
-                    ? const Center(
-                        child: Text(
-                          'No tenés clases este mes',
-                          style: TextStyle(
-                            fontFamily: 'Georgia',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            color: Colors.black87,
-                          ),
+              child: (futuras.isEmpty && anteriores.isEmpty)
+                  ? const Center(
+                      child: Text(
+                        'No tenés clases este mes',
+                        style: TextStyle(
+                          fontFamily: 'Georgia',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: Colors.black87,
                         ),
-                      )
-                    : ListView(
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (futuras.isNotEmpty) ...[
-                            const _SectionLabel(text: 'Próximas'),
-                            const SizedBox(height: 8),
-                            GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: futuras.length,
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 4,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 0.68,
+                          if (futuras.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFA9DDC4),
+                                borderRadius: BorderRadius.circular(28),
                               ),
-                              itemBuilder: (context, i) {
-                                final c = futuras[i];
-                                return _ClaseCell(
-                                  clase: c,
-                                  weekdayShort:
-                                      _weekdayShort(c['_fecha'] as DateTime),
-                                  esFutura: true,
-                                  tipoClase: _tipoClase,
-                                  onAvisar: () => _avisarNoAsistencia(c),
-                                );
-                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const _SectionLabel(
+                                    text: 'Próximas clases',
+                                    icon: Icons.event_note,
+                                    color: Color(0xFF3E9C6B),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  // Carrete horizontal con TODAS las clases
+                                  // próximas del mes (no solo la siguiente).
+                                  SizedBox(
+                                    height: 150,
+                                    child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: futuras.length,
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(width: 10),
+                                      itemBuilder: (context, i) {
+                                        final c = futuras[i];
+                                        return SizedBox(
+                                          width: 112,
+                                          child: _ClaseCell(
+                                            clase: c,
+                                            weekdayShort: _weekdayShort(
+                                                c['_fecha'] as DateTime),
+                                            esFutura: true,
+                                            tipoClase: _tipoClase,
+                                            onAvisar: () =>
+                                                _avisarNoAsistencia(c),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
                           if (futuras.isNotEmpty && anteriores.isNotEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              child: Divider(color: Colors.black26, height: 1),
-                            ),
-                          if (anteriores.isNotEmpty) ...[
-                            const _SectionLabel(text: 'Anteriores'),
-                            const SizedBox(height: 8),
-                            GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: anteriores.length,
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 4,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 0.68,
+                            const SizedBox(height: 14),
+                          if (anteriores.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEDE7F6),
+                                borderRadius: BorderRadius.circular(28),
                               ),
-                              itemBuilder: (context, i) {
-                                final c = anteriores[i];
-                                return _ClaseCell(
-                                  clase: c,
-                                  weekdayShort:
-                                      _weekdayShort(c['_fecha'] as DateTime),
-                                  esFutura: false,
-                                  tipoClase: _tipoClase,
-                                  onAvisar: null,
-                                );
-                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 14,
+                                    runSpacing: 6,
+                                    children: const [
+                                      _SectionLabel(
+                                        text: 'Clases anteriores',
+                                        icon: Icons.bar_chart,
+                                        color: Color(0xFF9D84D0),
+                                      ),
+                                      _LeyendaEstados(),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  GridView.builder(
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    itemCount: anteriores.length,
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 4,
+                                      crossAxisSpacing: 8,
+                                      mainAxisSpacing: 8,
+                                      childAspectRatio: 0.68,
+                                    ),
+                                    itemBuilder: (context, i) {
+                                      final c = anteriores[i];
+                                      return _ClaseCell(
+                                        clase: c,
+                                        weekdayShort: _weekdayShort(
+                                            c['_fecha'] as DateTime),
+                                        esFutura: false,
+                                        tipoClase: _tipoClase,
+                                        onAvisar: null,
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
+                          const SizedBox(height: 12),
                         ],
                       ),
-              ),
+                    ),
             ),
 
             const SocialFooter(),
@@ -398,23 +448,102 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 }
 
-/// Título chico y discreto para separar "Próximas" de "Anteriores"
-/// dentro del mismo listado (separación sutil, no dos pestañas distintas).
-class _SectionLabel extends StatelessWidget {
-  final String text;
-  const _SectionLabel({required this.text});
+/// Círculo con flecha para ir al mes anterior/siguiente.
+class _NavMesButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _NavMesButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text.toUpperCase(),
-      style: const TextStyle(
-        fontFamily: 'Georgia',
-        fontWeight: FontWeight.w700,
-        fontSize: 11,
-        letterSpacing: 0.6,
-        color: Colors.black54,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE5D4F9),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 20, color: const Color(0xFF7A5AA4)),
       ),
+    );
+  }
+}
+
+/// Título de sección con un ícono en un círculo de color, para separar
+/// "Próximas clases" de "Clases anteriores" dentro del mismo listado.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  final Color color;
+
+  const _SectionLabel({
+    required this.text,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          child: Icon(icon, size: 12, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            fontFamily: 'Georgia',
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            letterSpacing: 0.4,
+            color: Color(0xFF0E3A5D),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Referencia de colores/íconos de "Anteriores" (mismos que usa _ClaseCell).
+class _LeyendaEstados extends StatelessWidget {
+  const _LeyendaEstados();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget item(IconData icon, Color color, String label) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontSize: 10,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 4,
+      children: [
+        item(Icons.check_circle, const Color(0xFF4FBF75), 'Asistí'),
+        item(Icons.info, const Color(0xFFE0A83B), 'Justificada'),
+        item(Icons.cancel, const Color(0xFFD9534F), 'No asistí'),
+      ],
     );
   }
 }
@@ -468,8 +597,13 @@ class _ClaseCell extends StatelessWidget {
     final hhmm =
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
-    // En clases futuras sin estado registrado todavía, mostramos el botón.
-    final mostrarBotonAviso = esFutura && info == null && onAvisar != null;
+    // En clases futuras sin estado registrado todavía, mostramos el botón
+    // "No voy" solo hasta 1 hora antes de la clase; pasado ese límite (o si
+    // ya empezó), se deja de mostrar (el backend además lo vuelve a
+    // validar por si el pedido llegara igual).
+    final faltaMasDeUnaHora = dt.difference(DateTime.now()).inMinutes >= 60;
+    final mostrarBotonAviso =
+        esFutura && info == null && onAvisar != null && faltaMasDeUnaHora;
 
     return Container(
       decoration: BoxDecoration(
@@ -483,40 +617,56 @@ class _ClaseCell extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            weekdayShort,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Georgia',
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-              color: Color(0xFF0E3A5D),
+          // Badge lila con el día de la semana, como en el diseño.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5D4F9),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              weekdayShort,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Georgia',
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
+                color: Color(0xFF7A5AA4),
+              ),
             ),
           ),
+          const SizedBox(height: 6),
           Text(
             '${dt.day}/${dt.month}',
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontFamily: 'Georgia',
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
               color: Color(0xFF0E3A5D),
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            '$hhmm hs',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontFamily: 'Georgia',
-              fontSize: 10,
-              color: Colors.black54,
-            ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.access_time, size: 11, color: Colors.black45),
+              const SizedBox(width: 3),
+              Text(
+                '$hhmm hs',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Georgia',
+                  fontSize: 10,
+                  color: Colors.black54,
+                ),
+              ),
+            ],
           ),
           if (tipoClase.isNotEmpty) ...[
             const SizedBox(height: 2),

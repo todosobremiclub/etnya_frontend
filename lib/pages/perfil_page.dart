@@ -85,13 +85,11 @@ class _PerfilPageState extends State<PerfilPage> {
                 ),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    'https://etnya.onrender.com/admin-panel/logo.jpeg',
+                  child: Image.asset(
+                    'assets/logo.jpeg',
                     width: 40,
                     height: 40,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.image_not_supported, size: 40),
                   ),
                 ),
                 const SizedBox(width: 8),
