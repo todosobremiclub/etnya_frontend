@@ -16,7 +16,12 @@ class _PagosPageState extends State<PagosPage> {
   DateTime? _proximoVencimiento;
 
   List<Map<String, dynamic>> _pagos = []; // pagos propios, más reciente primero
-  Set<int> _mesesPagados = {}; // meses pagados del año actual (1..12)
+  // Meses pagados por año: {2026: {1, 2, 3}, 2025: {...}}
+  Map<int, Set<int>> _mesesPagadosPorAnio = {};
+  // Fecha de ingreso de la socia: los meses anteriores se muestran grisados.
+  DateTime? _fechaIngreso;
+  // Año que se está mirando en el historial (por defecto, el actual).
+  int _anio = DateTime.now().year;
 
   final List<String> _mesLabels = const [
     "ENE",
@@ -50,6 +55,8 @@ class _PagosPageState extends State<PagosPage> {
       final vencStr = (perfil['proximo_vencimiento'] ?? '').toString();
       setState(() {
         _estadoPago = (perfil['estado_pago'] ?? '').toString();
+        _fechaIngreso =
+            DateTime.tryParse((perfil['inicio_clases'] ?? '').toString());
         _proximoVencimiento = vencStr.isNotEmpty ? DateTime.tryParse(vencStr) : null;
         _loading = false;
       });
@@ -66,15 +73,14 @@ class _PagosPageState extends State<PagosPage> {
       final pagosRaw = await Api.getPagosPropios();
       final pagos = pagosRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
-      final anioActual = DateTime.now().year;
-      final mesesPagados = <int>{};
+      final porAnio = <int, Set<int>>{};
       for (final p in pagos) {
         final mesStr = (p['mes_pagado'] ?? '').toString();
         if (mesStr.length >= 7) {
           final anio = int.tryParse(mesStr.substring(0, 4));
           final mes = int.tryParse(mesStr.substring(5, 7));
-          if (anio == anioActual && mes != null) {
-            mesesPagados.add(mes);
+          if (anio != null && mes != null) {
+            porAnio.putIfAbsent(anio, () => <int>{}).add(mes);
           }
         }
       }
@@ -82,7 +88,7 @@ class _PagosPageState extends State<PagosPage> {
       if (!mounted) return;
       setState(() {
         _pagos = pagos;
-        _mesesPagados = mesesPagados;
+        _mesesPagadosPorAnio = porAnio;
       });
     } catch (e) {
       if (!mounted) return;
@@ -95,8 +101,7 @@ class _PagosPageState extends State<PagosPage> {
   /// Busca el pago correspondiente a un mes del año actual y muestra el
   /// cupón (fecha, monto, actividad) con la opción de descargar el PDF.
   void _mostrarCupon(int mesNumero) {
-    final anioActual = DateTime.now().year;
-    final mesKey = '$anioActual-${mesNumero.toString().padLeft(2, '0')}';
+    final mesKey = '$_anio-${mesNumero.toString().padLeft(2, '0')}';
     final pago = _pagos.firstWhere(
       (p) => (p['mes_pagado'] ?? '').toString() == mesKey,
       orElse: () => <String, dynamic>{},
@@ -166,6 +171,24 @@ class _PagosPageState extends State<PagosPage> {
     } catch (_) {}
   }
 
+  /// Primer año que se puede consultar: el de ingreso de la socia (o el
+  /// del pago más viejo, si no hay fecha de ingreso).
+  int get _primerAnio {
+    final anios = <int>[
+      if (_fechaIngreso != null) _fechaIngreso!.year,
+      ..._mesesPagadosPorAnio.keys,
+    ];
+    if (anios.isEmpty) return DateTime.now().year;
+    return anios.reduce((a, b) => a < b ? a : b);
+  }
+
+  /// true si ese mes es anterior al mes de ingreso de la socia.
+  bool _esAntesDeIngreso(int anio, int mes) {
+    final ingreso = _fechaIngreso;
+    if (ingreso == null) return false;
+    return anio < ingreso.year || (anio == ingreso.year && mes < ingreso.month);
+  }
+
   String _fechaCorta(DateTime? d) {
     if (d == null) return '-';
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -197,11 +220,10 @@ class _PagosPageState extends State<PagosPage> {
     }
 
     final alDia = _estadoPago == 'al_dia';
-    final anioActual = DateTime.now().year;
-    final mesProximoPago = (_proximoVencimiento != null &&
-            _proximoVencimiento!.year == anioActual)
-        ? _proximoVencimiento!.month
-        : null;
+    final hoy = DateTime.now();
+    final mesesPagados = _mesesPagadosPorAnio[_anio] ?? <int>{};
+    final puedeIrAtras = _anio > _primerAnio;
+    final puedeIrAdelante = _anio < hoy.year;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F5),
@@ -306,7 +328,7 @@ class _PagosPageState extends State<PagosPage> {
 
                   const SizedBox(height: 14),
 
-                  // "Historial de pagos"
+                  // "Historial de pagos" + selector de año
                   Row(
                     children: [
                       Container(
@@ -320,13 +342,35 @@ class _PagosPageState extends State<PagosPage> {
                             color: Color(0xFF7A5AA4), size: 13),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'Historial de pagos',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0E3A5D),
+                      const Expanded(
+                        child: Text(
+                          'Historial de pagos',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0E3A5D),
+                          ),
                         ),
+                      ),
+                      _AnioBoton(
+                        icon: Icons.chevron_left,
+                        onTap: puedeIrAtras ? () => setState(() => _anio--) : null,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          '$_anio',
+                          style: const TextStyle(
+                            fontFamily: 'Georgia',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0E3A5D),
+                          ),
+                        ),
+                      ),
+                      _AnioBoton(
+                        icon: Icons.chevron_right,
+                        onTap: puedeIrAdelante ? () => setState(() => _anio++) : null,
                       ),
                     ],
                   ),
@@ -347,15 +391,34 @@ class _PagosPageState extends State<PagosPage> {
                     itemBuilder: (_, index) {
                       final label = _mesLabels[index];
                       final mesNumero = index + 1;
-                      final pagado = _mesesPagados.contains(mesNumero);
-                      final esProximoPago = !pagado && mesProximoPago == mesNumero;
+                      final pagado = mesesPagados.contains(mesNumero);
+                      final esMesEnCurso =
+                          _anio == hoy.year && mesNumero == hoy.month;
+                      final esFuturo = _anio > hoy.year ||
+                          (_anio == hoy.year && mesNumero > hoy.month);
+
+                      _EstadoMes estado;
+                      if (_esAntesDeIngreso(_anio, mesNumero)) {
+                        estado = _EstadoMes.antesDeIngreso;
+                      } else if (pagado) {
+                        estado = _EstadoMes.pagado;
+                      } else if (esMesEnCurso) {
+                        estado = _EstadoMes.enCurso;
+                      } else if (esFuturo) {
+                        estado = _EstadoMes.futuro;
+                      } else {
+                        estado = _EstadoMes.pendiente;
+                      }
 
                       return _MesCard(
                         index: index,
                         label: label,
-                        pagado: pagado,
-                        esProximoPago: esProximoPago,
-                        fechaVencimiento: esProximoPago ? _fechaCorta(_proximoVencimiento) : null,
+                        estado: estado,
+                        esMesEnCurso: esMesEnCurso,
+                        // El abono se paga del 1 al 10 de cada mes.
+                        fechaVencimiento: esMesEnCurso
+                            ? '10/${mesNumero.toString().padLeft(2, '0')}'
+                            : null,
                         onTap: pagado ? () => _mostrarCupon(mesNumero) : null,
                       );
                     },
@@ -377,12 +440,15 @@ class _PagosPageState extends State<PagosPage> {
                         ),
                       ],
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    child: const Wrap(
+                      alignment: WrapAlignment.spaceEvenly,
+                      spacing: 12,
+                      runSpacing: 6,
                       children: [
                         _LeyendaItem(tipo: _LeyendaTipo.pagado, texto: 'Pagado'),
-                        _LeyendaItem(tipo: _LeyendaTipo.proximoPago, texto: 'Próximo pago'),
+                        _LeyendaItem(tipo: _LeyendaTipo.enCurso, texto: 'Mes en curso'),
                         _LeyendaItem(tipo: _LeyendaTipo.pendiente, texto: 'Pendiente'),
+                        _LeyendaItem(tipo: _LeyendaTipo.antesDeIngreso, texto: 'Antes del ingreso'),
                       ],
                     ),
                   ),
@@ -438,7 +504,7 @@ class _PagosPageState extends State<PagosPage> {
 
 // ================== LEYENDA ==================
 
-enum _LeyendaTipo { pagado, proximoPago, pendiente }
+enum _LeyendaTipo { pagado, enCurso, pendiente, antesDeIngreso }
 
 class _LeyendaItem extends StatelessWidget {
   final _LeyendaTipo tipo;
@@ -457,11 +523,18 @@ class _LeyendaItem extends StatelessWidget {
           child: CustomPaint(painter: _DiagonalLinePainter(color: const Color(0xFF7A5AA4))),
         );
         break;
-      case _LeyendaTipo.proximoPago:
+      case _LeyendaTipo.enCurso:
         indicador = Container(
           width: 10,
           height: 10,
           decoration: const BoxDecoration(color: Color(0xFF3E9C6B), shape: BoxShape.circle),
+        );
+        break;
+      case _LeyendaTipo.antesDeIngreso:
+        indicador = Container(
+          width: 10,
+          height: 10,
+          decoration: const BoxDecoration(color: Color(0xFFD5D5D5), shape: BoxShape.circle),
         );
         break;
       case _LeyendaTipo.pendiente:
@@ -486,18 +559,20 @@ class _LeyendaItem extends StatelessWidget {
 
 // ================== WIDGET TARJETA DE MES ==================
 
+enum _EstadoMes { antesDeIngreso, pagado, enCurso, pendiente, futuro }
+
 class _MesCard extends StatelessWidget {
   final String label;
-  final bool pagado;
-  final bool esProximoPago;
+  final _EstadoMes estado;
+  final bool esMesEnCurso;
   final String? fechaVencimiento;
   final int index;
   final VoidCallback? onTap;
 
   const _MesCard({
     required this.label,
-    required this.pagado,
-    required this.esProximoPago,
+    required this.estado,
+    required this.esMesEnCurso,
     required this.fechaVencimiento,
     required this.index,
     this.onTap,
@@ -528,24 +603,46 @@ class _MesCard extends StatelessWidget {
 
   static const violeta = Color(0xFF7A5AA4); // violeta de texto y línea
   static const azulPendiente = Color(0xFF465177);
-  static const verdeProximo = Color(0xFF1F7A47);
+  static const verdeEnCurso = Color(0xFF3E9C6B);
+  static const gris = Color(0xFF9E9E9E);
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = esProximoPago
-        ? const Color(0xFFBFE9D2)
-        : _bgColors[index.clamp(0, _bgColors.length - 1)];
+    Color bgColor = _bgColors[index.clamp(0, _bgColors.length - 1)];
+    Color colorTexto = azulPendiente;
+    Color colorSub = Colors.black54;
+    String subtitulo = '';
 
-    final colorTexto = esProximoPago ? verdeProximo : (pagado ? violeta : azulPendiente);
-
-    String subtitulo;
-    if (pagado) {
-      subtitulo = 'Pagado';
-    } else if (esProximoPago) {
-      subtitulo = 'Próximo pago';
-    } else {
-      subtitulo = 'Pendiente';
+    switch (estado) {
+      case _EstadoMes.antesDeIngreso:
+        bgColor = const Color(0xFFEDEDED);
+        colorTexto = gris;
+        colorSub = gris;
+        subtitulo = 'Sin actividad';
+        break;
+      case _EstadoMes.pagado:
+        colorTexto = violeta;
+        subtitulo = 'Pagado';
+        break;
+      case _EstadoMes.enCurso:
+        // Mes en curso sin pagar: bien destacado.
+        bgColor = verdeEnCurso;
+        colorTexto = Colors.white;
+        colorSub = Colors.white;
+        subtitulo = 'A pagar';
+        break;
+      case _EstadoMes.pendiente:
+        subtitulo = 'Pendiente';
+        break;
+      case _EstadoMes.futuro:
+        bgColor = bgColor.withOpacity(0.5);
+        colorTexto = azulPendiente.withOpacity(0.6);
+        colorSub = Colors.black38;
+        subtitulo = '—';
+        break;
     }
+
+    final enCursoSinPagar = estado == _EstadoMes.enCurso;
 
     return InkWell(
       onTap: onTap,
@@ -556,6 +653,20 @@ class _MesCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: BorderRadius.circular(14),
+              // El mes en curso siempre lleva borde verde (aunque ya esté
+              // pagado) para ubicarlo de un vistazo.
+              border: esMesEnCurso
+                  ? Border.all(color: verdeEnCurso, width: 2.5)
+                  : null,
+              boxShadow: enCursoSinPagar
+                  ? [
+                      BoxShadow(
+                        color: verdeEnCurso.withOpacity(0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
             ),
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -565,7 +676,7 @@ class _MesCard extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: enCursoSinPagar ? 16 : 14,
                     fontWeight: FontWeight.w800,
                     color: colorTexto,
                     letterSpacing: 1,
@@ -576,28 +687,58 @@ class _MesCard extends StatelessWidget {
                   subtitulo,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: esProximoPago ? FontWeight.w700 : FontWeight.w500,
-                    color: esProximoPago ? verdeProximo : Colors.black54,
+                    fontSize: enCursoSinPagar ? 11 : 9,
+                    fontWeight: enCursoSinPagar ? FontWeight.w700 : FontWeight.w500,
+                    color: colorSub,
                   ),
                 ),
-                if (esProximoPago && fechaVencimiento != null) ...[
+                if (enCursoSinPagar && fechaVencimiento != null) ...[
                   const SizedBox(height: 1),
                   Text(
-                    fechaVencimiento!,
-                    style: const TextStyle(fontSize: 8, color: Colors.black45),
+                    'Vence $fechaVencimiento',
+                    style: const TextStyle(fontSize: 9, color: Colors.white),
                   ),
                 ],
               ],
             ),
           ),
-          if (pagado)
+          if (estado == _EstadoMes.pagado)
             Positioned.fill(
               child: CustomPaint(
                 painter: _DiagonalLinePainter(color: violeta),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Flecha para cambiar de año en el historial (deshabilitada en los
+/// extremos: año de ingreso / año actual).
+class _AnioBoton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _AnioBoton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final habilitado = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: habilitado ? const Color(0xFFE5D4F9) : const Color(0xFFEDEDED),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: habilitado ? const Color(0xFF7A5AA4) : Colors.black26,
+        ),
       ),
     );
   }

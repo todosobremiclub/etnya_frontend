@@ -124,8 +124,9 @@ class _LoginPageState extends State<LoginPage> {
                 height: 52,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _verdeLogo,
-                    foregroundColor: Colors.white,
+                    backgroundColor: _verdeTurquesa.withOpacity(0.15),
+                    foregroundColor: _verdeLogo,
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
                     ),
@@ -137,7 +138,7 @@ class _LoginPageState extends State<LoginPage> {
                           width: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: _verdeLogo,
                           ),
                         )
                       : const Text(
