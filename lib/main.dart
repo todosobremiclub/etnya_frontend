@@ -25,6 +25,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// en SharedPreferences con la ruta a ese archivo.
 const _kFotoPerfilPref = 'foto_perfil_local';
 
+// Colores del Home
+const _kVerdeOscuro = Color(0xFF00524A); // verde oscuro del logo (antes bordó)
+const _kTextoHome = Colors.black;        // textos que antes estaban en azul
+const _kFondoTarjeta = Color(0xFFECEEED); // gris claro de las 4 tarjetas
+const double _kAltoTarjeta = 165;        // mismo alto para las 4 tarjetas
+
 enum _AccionFoto { camara, galeria, quitar }
 
 /// handler de FCM en segundo plano (solo mobile)
@@ -450,71 +456,131 @@ class _GateState extends State<Gate> {
     return Scaffold(
       backgroundColor: const Color(0xFFF2F7F5),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 6, 18, 16),
-          children: [
-            _HomeHeader(
-              perfilFuture: _perfilFuture!,
-              onNotificaciones: _goNotificaciones,
-              onLogout: _onLogout,
-            ),
-            const SizedBox(height: 16),
+        // CustomScrollView + SliverFillRemaining: si el contenido entra en
+        // la pantalla, los botones de redes quedan pegados abajo de todo;
+        // si no entra, se scrollea normalmente y quedan al final.
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  _HomeHeader(
+                    perfilFuture: _perfilFuture!,
+                    onNotificaciones: _goNotificaciones,
+                    onLogout: _onLogout,
+                  ),
+                  const SizedBox(height: 12),
 
-            _PerfilCard(
-              perfilFuture: _perfilFuture!,
-              fotoLocalPath: _fotoLocalPath,
-              onTapFoto: _elegirFoto,
-              onTap: _goPerfil,
-            ),
+                  _PerfilCard(
+                    perfilFuture: _perfilFuture!,
+                    fotoLocalPath: _fotoLocalPath,
+                    onTapFoto: _elegirFoto,
+                    onTap: _goPerfil,
+                  ),
 
-            const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _ProximaClaseCard(
-                      future: _proximaClaseFuture!,
-                      onTap: _goAgenda,
+                  SizedBox(
+                    height: _kAltoTarjeta,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _ProximaClaseCard(
+                            future: _proximaClaseFuture!,
+                            onTap: _goAgenda,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _PlanPagoCard(
+                            perfilFuture: _perfilFuture!,
+                            onTap: _goPagos,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _PlanPagoCard(
-                      perfilFuture: _perfilFuture!,
-                      onTap: _goPagos,
+
+                  const SizedBox(height: 10),
+
+                  SizedBox(
+                    height: _kAltoTarjeta,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _ProgresoCard(
+                            recorridoFuture: _recorridoFuture!,
+                            onTap: _goMiRecorrido,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _NovedadesCard(onTap: _goNovedades),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ]),
               ),
             ),
-
-            const SizedBox(height: 10),
-
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _ProgresoCard(
-                      recorridoFuture: _recorridoFuture!,
-                      onTap: _goMiRecorrido,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _NovedadesCard(onTap: _goNovedades),
-                  ),
-                ],
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(18, 20, 18, 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [SocialFooter()],
+                ),
               ),
             ),
-
-            const SizedBox(height: 16),
-            const SocialFooter(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Decoración común de las 4 tarjetas del Home (mismo fondo gris claro).
+BoxDecoration _decoTarjeta() => BoxDecoration(
+      color: _kFondoTarjeta,
+      borderRadius: BorderRadius.circular(20),
+    );
+
+/// Título común de las 4 tarjetas del Home (ícono + texto, más grande).
+class _TituloTarjeta extends StatelessWidget {
+  final IconData icon;
+  final String texto;
+  final Color color;
+
+  const _TituloTarjeta({required this.icon, required this.texto, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 6),
+        // Si el título no entra en una línea (pantallas angostas), se
+        // achica un poco en vez de cortarse.
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+            texto,
+            maxLines: 1,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -536,7 +602,9 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      children: [
+        Row(
       children: [
         Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
@@ -577,6 +645,11 @@ class _HomeHeader extends StatelessWidget {
           icon: const Icon(Icons.logout),
           tooltip: 'Cerrar sesión',
         ),
+      ],
+        ),
+        const SizedBox(height: 4),
+        // Ilustración de la cama de Pilates (reformer) en el encabezado.
+        Image.asset('assets/reformer.png', height: 90, fit: BoxFit.contain),
       ],
     );
   }
@@ -672,7 +745,7 @@ class _PerfilCard extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
+                                color: _kVerdeOscuro,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
@@ -694,7 +767,7 @@ class _PerfilCard extends StatelessWidget {
                               fontFamily: 'Georgia',
                               fontWeight: FontWeight.w700,
                               fontSize: 17,
-                              color: Color(0xFF0E3A5D),
+                              color: _kTextoHome,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -703,7 +776,7 @@ class _PerfilCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.primary,
+                              color: _kVerdeOscuro,
                             ),
                           ),
                           Text(
@@ -768,7 +841,7 @@ class _StatMini extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        Icon(icon, size: 18, color: _kVerdeOscuro),
         const SizedBox(height: 4),
         Text(
           label,
@@ -787,7 +860,7 @@ class _StatMini extends StatelessWidget {
             fontSize: 13,
             fontWeight: FontWeight.w600,
             fontFamily: 'Georgia',
-            color: Color(0xFF0E3A5D),
+            color: _kTextoHome,
           ),
         ),
       ],
@@ -821,23 +894,6 @@ class _ProximaClaseCard extends StatelessWidget {
     return '${names[dt.weekday - 1]} ${dt.day}/${dt.month}';
   }
 
-  /// Nombre de modalidad a mostrar: prioriza la modalidad del socio
-  /// (ej. "Pilates Reformer"); si no hay, y la clase tiene un tipo
-  /// distinto de "normal" (ej. "recuperación"), muestra ese.
-  /// Si la modalidad del socio viene con aclaraciones después de un "-"
-  /// (ej. "Pilates Reformer - 2 x semana"), se muestra solo la parte
-  /// antes del guion.
-  String _tipoAMostrar(Map<String, dynamic> clase) {
-    final tipoClaseSocio = (clase['_tipoClase'] ?? '').toString().trim();
-    if (tipoClaseSocio.isNotEmpty) {
-      return tipoClaseSocio.split('-').first.trim();
-    }
-
-    final tipo = (clase['tipo'] ?? '').toString().trim();
-    if (tipo.isEmpty || tipo.toLowerCase() == 'normal') return '';
-    return tipo[0].toUpperCase() + tipo.substring(1);
-  }
-
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -846,10 +902,7 @@ class _ProximaClaseCard extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF1E9FB),
-          borderRadius: BorderRadius.circular(20),
-        ),
+        decoration: _decoTarjeta(),
         child: FutureBuilder<Map<String, dynamic>?>(
           future: future,
           builder: (context, snap) {
@@ -868,19 +921,23 @@ class _ProximaClaseCard extends StatelessWidget {
 
             final clase = snap.data;
             if (clase == null) {
-              return Column(
+              return const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.event_available, color: Color(0xFF8B6FC9), size: 18),
-                  SizedBox(height: 8),
+                children: [
+                  _TituloTarjeta(
+                    icon: Icons.calendar_today,
+                    texto: 'Mis Clases',
+                    color: Color(0xFF8B6FC9),
+                  ),
+                  SizedBox(height: 12),
                   Text(
                     'Sin clases próximas agendadas',
                     style: TextStyle(
                       fontFamily: 'Georgia',
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
-                      color: Color(0xFF0E3A5D),
+                      color: _kTextoHome,
                     ),
                   ),
                 ],
@@ -888,7 +945,6 @@ class _ProximaClaseCard extends StatelessWidget {
             }
 
             final dt = clase['_fecha'] as DateTime;
-            final tipo = _tipoAMostrar(clase);
             final hora =
                 '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
@@ -896,50 +952,34 @@ class _ProximaClaseCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: const [
-                    Icon(Icons.calendar_today, color: Color(0xFF8B6FC9), size: 14),
-                    SizedBox(width: 6),
-                    Text(
-                      'PRÓXIMA CLASE',
-                      style: TextStyle(
-                        color: Color(0xFF8B6FC9),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                  ],
+                const _TituloTarjeta(
+                  icon: Icons.calendar_today,
+                  texto: 'Mis Clases',
+                  color: Color(0xFF8B6FC9),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                const Text(
+                  'Próxima clase',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   _labelFecha(dt),
                   style: const TextStyle(
-                    fontSize: 15,
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'Georgia',
-                    color: Color(0xFF0E3A5D),
+                    color: _kTextoHome,
                   ),
                 ),
                 Text(
                   '$hora hs',
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF8B6FC9),
                   ),
                 ),
-                if (tipo.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    tipo,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'Georgia',
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
               ],
             );
           },
@@ -971,10 +1011,7 @@ class _PlanPagoCard extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE3F3EA),
-          borderRadius: BorderRadius.circular(20),
-        ),
+        decoration: _decoTarjeta(),
         child: FutureBuilder<Map<String, dynamic>>(
           future: perfilFuture,
           builder: (context, snap) {
@@ -988,31 +1025,22 @@ class _PlanPagoCard extends StatelessWidget {
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.credit_card, color: Color(0xFF3E9C6B), size: 16),
-                    SizedBox(width: 6),
-                    Text(
-                      'MI PLAN DE PAGO',
-                      style: TextStyle(
-                        color: Color(0xFF3E9C6B),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                  ],
+                const _TituloTarjeta(
+                  icon: Icons.credit_card,
+                  texto: 'Mi plan de pago',
+                  color: Color(0xFF3E9C6B),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   planLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'Georgia',
-                    color: Color(0xFF0E3A5D),
+                    color: _kTextoHome,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1028,7 +1056,7 @@ class _PlanPagoCard extends StatelessWidget {
                     color: colorEstado,
                   ),
                 ),
-                const SizedBox(height: 10),
+                const Spacer(),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
@@ -1064,8 +1092,8 @@ class _PlanPagoCard extends StatelessWidget {
   }
 }
 
-/// Tarjeta "Progreso": clases realizadas (acumulado) y hace cuántos meses
-/// es socia. Lleva a "Mi recorrido" para el detalle completo.
+/// Tarjeta "Progreso": días practicando Pilates en Etnya. Lleva a
+/// "Mi recorrido" para el detalle completo.
 class _ProgresoCard extends StatelessWidget {
   final Future<Map<String, dynamic>> recorridoFuture;
   final VoidCallback onTap;
@@ -1080,86 +1108,57 @@ class _ProgresoCard extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
+        decoration: _decoTarjeta(),
         child: FutureBuilder<Map<String, dynamic>>(
           future: recorridoFuture,
           builder: (context, snap) {
-            final data = snap.data;
-            final clasesTotales = (data?['clases_totales'] ?? 0) as int;
-            final diasPracticando = data?['dias_practicando'] as int?;
-            final meses =
-                diasPracticando != null ? (diasPracticando / 30).floor() : null;
+            final diasPracticando = snap.data?['dias_practicando'] as int?;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Progreso',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0E3A5D),
-                  ),
+                const _TituloTarjeta(
+                  icon: Icons.trending_up,
+                  texto: 'Progreso',
+                  color: _kTextoHome,
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 46,
-                      height: 46,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          const SizedBox(
-                            width: 46,
-                            height: 46,
-                            child: CircularProgressIndicator(
-                              value: 1,
-                              strokeWidth: 4,
-                              valueColor:
-                                  AlwaysStoppedAnimation(Color(0xFF4FBF75)),
-                              backgroundColor: Color(0xFFDDEFE2),
-                            ),
-                          ),
-                          Text(
-                            '$clasesTotales',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF4FBF75),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Clases\nrealizadas',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.black54,
-                          height: 1.1,
+                SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: CircularProgressIndicator(
+                          value: 1,
+                          strokeWidth: 4,
+                          valueColor: AlwaysStoppedAnimation(Color(0xFF4FBF75)),
+                          backgroundColor: Color(0xFFDDEFE2),
                         ),
                       ),
-                    ),
-                  ],
+                      Text(
+                        diasPracticando != null ? '$diasPracticando' : '-',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF4FBF75),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  meses != null ? '$meses meses como socia' : '-',
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                const Text(
+                  'Días practicando Pilates con nosotras',
+                  maxLines: 2,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.black54,
+                    height: 1.2,
+                  ),
                 ),
               ],
             );
@@ -1185,44 +1184,20 @@ class _NovedadesCard extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
+        decoration: _decoTarjeta(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: const BoxDecoration(
-                color: Color(0xFFBBA3EA),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.campaign_outlined, size: 16, color: Colors.white),
+            const _TituloTarjeta(
+              icon: Icons.campaign_outlined,
+              texto: 'Novedades',
+              color: Color(0xFF9D84D0),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'Novedades',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Georgia',
-                color: Color(0xFF0E3A5D),
-              ),
-            ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 12),
             const Text(
               'Enterate de todo lo nuevo en Etnya 💜',
-              style: TextStyle(fontSize: 11, color: Colors.black54),
+              style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.3),
             ),
           ],
         ),

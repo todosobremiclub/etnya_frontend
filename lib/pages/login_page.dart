@@ -10,6 +10,11 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  // Verdes del logo de Etnya (solo para el login; el resto de la app
+  // mantiene su paleta).
+  static const Color _verdeLogo = Color(0xFF00524A);    // letras "etnya"
+  static const Color _verdeTurquesa = Color(0xFF00A69B); // círculo del logo
+
   final _nroCtrl = TextEditingController();
   final _apeCtrl = TextEditingController();
   bool _loading = false;
@@ -30,8 +35,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
+    
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -48,7 +52,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Text(
                   'PILATES',
                   style: TextStyle(
-                    color: colorScheme.primary,
+                    color: _verdeLogo,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 4,
                     fontSize: 13,
@@ -74,12 +78,14 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 28),
               TextField(
                 controller: _nroCtrl,
+                cursorColor: _verdeLogo,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Número de socio',
-                  prefixIcon: Icon(Icons.badge_outlined, color: colorScheme.primary),
+                  prefixIcon: Icon(Icons.badge_outlined, color: _verdeLogo),
+                  floatingLabelStyle: const TextStyle(color: _verdeLogo),
                   filled: true,
-                  fillColor: colorScheme.primary.withOpacity(0.06),
+                  fillColor: _verdeTurquesa.withOpacity(0.08),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -89,11 +95,13 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 14),
               TextField(
                 controller: _apeCtrl,
+                cursorColor: _verdeLogo,
                 decoration: InputDecoration(
                   labelText: 'Apellido',
-                  prefixIcon: Icon(Icons.person_outline, color: colorScheme.primary),
+                  prefixIcon: Icon(Icons.person_outline, color: _verdeLogo),
+                  floatingLabelStyle: const TextStyle(color: _verdeLogo),
                   filled: true,
-                  fillColor: colorScheme.primary.withOpacity(0.06),
+                  fillColor: _verdeTurquesa.withOpacity(0.08),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -105,7 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   Checkbox(
                     value: _recordarme,
-                    activeColor: colorScheme.primary,
+                    activeColor: _verdeLogo,
                     onChanged: (v) => setState(() => _recordarme = v ?? false),
                   ),
                   const Text('Recordarme'),
@@ -116,7 +124,7 @@ class _LoginPageState extends State<LoginPage> {
                 height: 52,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: colorScheme.primary,
+                    backgroundColor: _verdeLogo,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),

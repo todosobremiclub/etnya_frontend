@@ -39,6 +39,7 @@ flutter:
   assets:
     - assets/logo.jpeg
     - assets/bambu.jpg
+    - assets/reformer.png
     - assets/icon/etnya_icon.png
     - assets/icon/etnya_icon_foreground.png
 

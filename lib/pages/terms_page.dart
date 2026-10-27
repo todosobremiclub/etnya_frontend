@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Formulario único de aceptación de términos, condiciones y riesgos
-/// médicos asociados a la práctica de Pilates. Se muestra una sola vez al
+/// Formulario único de aceptación de las "Pautas Etnya Pilates". Se muestra una sola vez al
 /// hacer login, y la aceptación vence al año (el backend controla el
 /// vencimiento en `terminos_aceptados`, ver GET /app/perfil). La única
 /// acción disponible para continuar usando la app es aceptar; quien no
 /// acepta solo puede cerrar sesión.
-///
-/// TODO: el texto de riesgos médicos es de PRUEBA. Reemplazar por el texto
-/// legal definitivo (revisado por quien corresponda) antes de publicar.
+/// Desde el panel (columna T&C) se puede "reiniciar" la aceptación para
+/// que se le vuelva a mostrar a la socia.
 class TermsPage extends StatefulWidget {
   final Future<void> Function() onAccepted;
   final Future<void> Function() onRejected;
@@ -60,7 +58,7 @@ class _TermsPageState extends State<TermsPage> {
             Image.asset('assets/logo.jpeg', height: 72),
             const SizedBox(height: 10),
             Text(
-              'Términos, condiciones y riesgos médicos',
+              'Pautas Etnya Pilates',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 18,
@@ -72,9 +70,9 @@ class _TermsPageState extends State<TermsPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                'Para usar la app de Etnya Pilates necesitás aceptar este '
-                'formulario. La aceptación es válida por un año; pasado ese '
-                'plazo te lo vamos a volver a pedir.',
+                'Para usar la app de Etnya Pilates necesitás leer y aceptar '
+                'estas pautas. La aceptación es válida por un año; pasado ese '
+                'plazo te las vamos a volver a pedir.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
@@ -85,35 +83,37 @@ class _TermsPageState extends State<TermsPage> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: const Text(
-                  // TODO: texto de prueba, reemplazar por el texto legal real.
-                  'TÉRMINOS Y CONDICIONES\n\n'
-                  '• Uso de la app y responsabilidad del usuario.\n'
-                  '• Tratamiento de datos personales.\n'
-                  '• Comunicación vía notificaciones push, email y WhatsApp.\n'
-                  '• Políticas de cancelación y asistencia a clases.\n'
-                  '• Otras cláusulas que definan ustedes.\n\n'
-                  'RIESGOS MÉDICOS ASOCIADOS A LA PRÁCTICA DE PILATES\n\n'
-                  '1. Declaro que mi estado de salud actual me permite realizar '
-                  'actividad física de intensidad moderada, y que no tengo '
-                  'ninguna condición médica que lo desaconseje.\n\n'
-                  '2. Declaro que voy a informar a mi profesor/a, antes de cada '
-                  'clase, cualquier lesión, dolor, embarazo, cirugía reciente u '
-                  'otra condición que pueda ser relevante para adaptar los '
-                  'ejercicios.\n\n'
-                  '3. Entiendo que, como toda actividad física, el Pilates '
-                  'conlleva un riesgo de lesión (muscular, articular u otro), y '
-                  'que Etnya y su personal no se hacen responsables por '
-                  'lesiones derivadas de omitir información médica relevante o '
-                  'de no seguir las indicaciones del profesor/a.\n\n'
-                  '4. Me comprometo a consultar con un profesional de la salud '
-                  'antes de iniciar esta actividad si tengo dudas sobre mi '
-                  'aptitud física para realizarla.\n\n'
-                  '5. Autorizo a que, ante una emergencia durante la clase, el '
-                  'personal de Etnya pueda solicitar asistencia médica en mi '
-                  'nombre.\n\n'
-                  'Al aceptar, confirmo que leí y estoy de acuerdo con estas '
-                  'condiciones, y que la información que voy a brindar sobre mi '
-                  'salud es correcta.',
+                  'PAUTAS ETNYA PILATES\n\n'
+                  '•  Para recuperar una clase, es necesario avisar la '
+                  'inasistencia con un mínimo de 2 horas de anticipación.\n\n'
+                  '•  La cantidad de recuperaciones disponibles por mes '
+                  'dependerá de la frecuencia semanal del plan.\n\n'
+                  '•  Las recuperaciones estarán sujetas a disponibilidad de '
+                  'días, horarios y cupos.\n\n'
+                  '•  Si no se asiste a una recuperación previamente '
+                  'coordinada, la clase se pierde.\n\n'
+                  '•  En caso de ausentarse durante un período prolongado y '
+                  'querer conservar el horario habitual, será necesario '
+                  'mantener el abono al día y coordinar las recuperaciones '
+                  'correspondientes.\n\n'
+                  '•  El abono mensual deberá realizarse del 1 al 10 de cada '
+                  'mes, independientemente de la cantidad de clases a las que '
+                  'se asista durante ese período.\n\n'
+                  '•  Cada alumno/a deberá informar cualquier condición de '
+                  'salud, lesión, embarazo, cirugía o situación que pueda '
+                  'afectar la práctica y comunicar cualquier cambio en su '
+                  'estado de salud.\n\n'
+                  '•  La práctica de Pilates se realiza bajo responsabilidad de '
+                  'cada alumno/a respecto de su propio estado de salud, '
+                  'comprometiéndose a respetar sus posibilidades y a informar '
+                  'ante cualquier dolor, molestia o malestar durante la '
+                  'clase.\n\n'
+                  '•  El uso de los equipos y materiales deberá realizarse '
+                  'siguiendo las indicaciones de las instructoras, cuidando el '
+                  'espacio y los elementos de Etnya.\n\n'
+                  'Estas pautas tienen como objetivo organizar el '
+                  'funcionamiento de Etnya Pilates y garantizar una '
+                  'experiencia segura, respetuosa y agradable para todos.',
                   textAlign: TextAlign.left,
                   style: TextStyle(fontSize: 14, height: 1.4),
                 ),
@@ -126,8 +126,7 @@ class _TermsPageState extends State<TermsPage> {
                   ? null
                   : (v) => setState(() => _checked = v ?? false),
               title: const Text(
-                'He leído y acepto los términos, condiciones y los riesgos '
-                'médicos asociados a la práctica de Pilates',
+                'Leí y acepto las Pautas Etnya Pilates',
                 style: TextStyle(fontSize: 13),
               ),
             ),
