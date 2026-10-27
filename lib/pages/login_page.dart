@@ -12,8 +12,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   // Verdes del logo de Etnya (solo para el login; el resto de la app
   // mantiene su paleta).
-  static const Color _verdeLogo = Color(0xFF00524A);    // letras "etnya"
-  static const Color _verdeTurquesa = Color(0xFF00A69B); // círculo del logo
+  static const Color _verdeAgua = Color(0xFF00A69B); // verde agua del círculo del logo
 
   final _nroCtrl = TextEditingController();
   final _apeCtrl = TextEditingController();
@@ -52,7 +51,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Text(
                   'PILATES',
                   style: TextStyle(
-                    color: _verdeLogo,
+                    color: _verdeAgua,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 4,
                     fontSize: 13,
@@ -78,14 +77,14 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 28),
               TextField(
                 controller: _nroCtrl,
-                cursorColor: _verdeLogo,
+                cursorColor: _verdeAgua,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Número de socio',
-                  prefixIcon: Icon(Icons.badge_outlined, color: _verdeLogo),
-                  floatingLabelStyle: const TextStyle(color: _verdeLogo),
+                  prefixIcon: Icon(Icons.badge_outlined, color: _verdeAgua),
+                  floatingLabelStyle: const TextStyle(color: _verdeAgua),
                   filled: true,
-                  fillColor: _verdeTurquesa.withOpacity(0.08),
+                  fillColor: _verdeAgua.withOpacity(0.08),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -95,13 +94,13 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 14),
               TextField(
                 controller: _apeCtrl,
-                cursorColor: _verdeLogo,
+                cursorColor: _verdeAgua,
                 decoration: InputDecoration(
                   labelText: 'Apellido',
-                  prefixIcon: Icon(Icons.person_outline, color: _verdeLogo),
-                  floatingLabelStyle: const TextStyle(color: _verdeLogo),
+                  prefixIcon: Icon(Icons.person_outline, color: _verdeAgua),
+                  floatingLabelStyle: const TextStyle(color: _verdeAgua),
                   filled: true,
-                  fillColor: _verdeTurquesa.withOpacity(0.08),
+                  fillColor: _verdeAgua.withOpacity(0.08),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
@@ -113,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   Checkbox(
                     value: _recordarme,
-                    activeColor: _verdeLogo,
+                    activeColor: _verdeAgua,
                     onChanged: (v) => setState(() => _recordarme = v ?? false),
                   ),
                   const Text('Recordarme'),
@@ -124,8 +123,9 @@ class _LoginPageState extends State<LoginPage> {
                 height: 52,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _verdeTurquesa.withOpacity(0.15),
-                    foregroundColor: _verdeLogo,
+                    // Verde agua suave, como el fondo de los campos.
+                    backgroundColor: _verdeAgua.withOpacity(0.15),
+                    foregroundColor: _verdeAgua,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
@@ -138,7 +138,7 @@ class _LoginPageState extends State<LoginPage> {
                           width: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: _verdeLogo,
+                            color: _verdeAgua,
                           ),
                         )
                       : const Text(

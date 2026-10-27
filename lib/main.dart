@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api/api.dart';
 import 'pages/login_page.dart';
-import 'pages/perfil_page.dart';
 import 'pages/agenda_page.dart';
 import 'pages/pagos_page.dart';
 import 'pages/novedades_page.dart';
@@ -26,7 +25,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _kFotoPerfilPref = 'foto_perfil_local';
 
 // Colores del Home
-const _kVerdeOscuro = Color(0xFF00524A); // verde oscuro del logo (antes bordó)
+const _kVerdeAgua = Color(0xFF00A69B);   // verde agua del logo (antes bordó)
+const _kVioleta = Color(0xFF8B6FC9);     // contenido de las 4 tarjetas
 const _kTextoHome = Colors.black;        // textos que antes estaban en azul
 const _kFondoTarjeta = Color(0xFFECEEED); // gris claro de las 4 tarjetas
 const double _kAltoTarjeta = 165;        // mismo alto para las 4 tarjetas
@@ -361,14 +361,6 @@ class _GateState extends State<Gate> {
   }
 
   // Navegación a secciones
-  void _goPerfil() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const PerfilPage()),
-    );
-    _refrescarHome();
-  }
-
   void _goAgenda() async {
     await Navigator.push(
       context,
@@ -476,7 +468,6 @@ class _GateState extends State<Gate> {
                     perfilFuture: _perfilFuture!,
                     fotoLocalPath: _fotoLocalPath,
                     onTapFoto: _elegirFoto,
-                    onTap: _goPerfil,
                   ),
 
                   const SizedBox(height: 12),
@@ -661,13 +652,11 @@ class _PerfilCard extends StatelessWidget {
   final Future<Map<String, dynamic>> perfilFuture;
   final String? fotoLocalPath;
   final VoidCallback onTapFoto;
-  final VoidCallback onTap;
 
   const _PerfilCard({
     required this.perfilFuture,
     required this.fotoLocalPath,
     required this.onTapFoto,
-    required this.onTap,
   });
 
   String _formatFecha(String? iso) {
@@ -700,10 +689,7 @@ class _PerfilCard extends StatelessWidget {
         final desde = _formatFecha(inicioIso);
         final dias = _diasDesdeIngreso(inicioIso);
 
-        return InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: onTap,
-          child: Container(
+        return Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -745,7 +731,7 @@ class _PerfilCard extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
-                                color: _kVerdeOscuro,
+                                color: _kVerdeAgua,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
@@ -776,7 +762,7 @@ class _PerfilCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: _kVerdeOscuro,
+                              color: _kVerdeAgua,
                             ),
                           ),
                           Text(
@@ -821,7 +807,6 @@ class _PerfilCard extends StatelessWidget {
                 ),
               ],
             ),
-          ),
         );
       },
     );
@@ -841,7 +826,7 @@ class _StatMini extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, size: 18, color: _kVerdeOscuro),
+        Icon(icon, size: 18, color: _kVerdeAgua),
         const SizedBox(height: 4),
         Text(
           label,
@@ -928,7 +913,7 @@ class _ProximaClaseCard extends StatelessWidget {
                   _TituloTarjeta(
                     icon: Icons.calendar_today,
                     texto: 'Mis Clases',
-                    color: Color(0xFF8B6FC9),
+                    color: _kTextoHome,
                   ),
                   SizedBox(height: 12),
                   Text(
@@ -937,7 +922,7 @@ class _ProximaClaseCard extends StatelessWidget {
                       fontFamily: 'Georgia',
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
-                      color: _kTextoHome,
+                      color: _kVioleta,
                     ),
                   ),
                 ],
@@ -955,7 +940,7 @@ class _ProximaClaseCard extends StatelessWidget {
                 const _TituloTarjeta(
                   icon: Icons.calendar_today,
                   texto: 'Mis Clases',
-                  color: Color(0xFF8B6FC9),
+                  color: _kTextoHome,
                 ),
                 const SizedBox(height: 12),
                 const Text(
@@ -969,7 +954,7 @@ class _ProximaClaseCard extends StatelessWidget {
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'Georgia',
-                    color: _kTextoHome,
+                    color: _kVioleta,
                   ),
                 ),
                 Text(
@@ -977,7 +962,7 @@ class _ProximaClaseCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF8B6FC9),
+                    color: _kVioleta,
                   ),
                 ),
               ],
@@ -1021,7 +1006,7 @@ class _PlanPagoCard extends StatelessWidget {
             final vencStr = (p?['proximo_vencimiento'] ?? '').toString();
             final alDia = (p?['estado_pago'] ?? '').toString() == 'al_dia';
             final colorEstado =
-                alDia ? const Color(0xFF3E9C6B) : const Color(0xFFD9534F);
+                alDia ? _kVioleta : const Color(0xFFD9534F); // rojo solo si está en mora
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1029,7 +1014,7 @@ class _PlanPagoCard extends StatelessWidget {
                 const _TituloTarjeta(
                   icon: Icons.credit_card,
                   texto: 'Mi plan de pago',
-                  color: Color(0xFF3E9C6B),
+                  color: _kTextoHome,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1040,7 +1025,7 @@ class _PlanPagoCard extends StatelessWidget {
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'Georgia',
-                    color: _kTextoHome,
+                    color: _kVioleta,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1074,11 +1059,11 @@ class _PlanPagoCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF3E9C6B),
+                            color: _kVioleta,
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(Icons.chevron_right, size: 14, color: Color(0xFF3E9C6B)),
+                        Icon(Icons.chevron_right, size: 14, color: _kVioleta),
                       ],
                     ),
                   ),
@@ -1135,8 +1120,8 @@ class _ProgresoCard extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: 1,
                           strokeWidth: 4,
-                          valueColor: AlwaysStoppedAnimation(Color(0xFF4FBF75)),
-                          backgroundColor: Color(0xFFDDEFE2),
+                          valueColor: AlwaysStoppedAnimation(_kVioleta),
+                          backgroundColor: Color(0xFFE5D4F9),
                         ),
                       ),
                       Text(
@@ -1144,7 +1129,7 @@ class _ProgresoCard extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF4FBF75),
+                          color: _kVioleta,
                         ),
                       ),
                     ],
@@ -1156,7 +1141,7 @@ class _ProgresoCard extends StatelessWidget {
                   maxLines: 2,
                   style: TextStyle(
                     fontSize: 11,
-                    color: Colors.black54,
+                    color: _kVioleta,
                     height: 1.2,
                   ),
                 ),
@@ -1192,12 +1177,12 @@ class _NovedadesCard extends StatelessWidget {
             const _TituloTarjeta(
               icon: Icons.campaign_outlined,
               texto: 'Novedades',
-              color: Color(0xFF9D84D0),
+              color: _kTextoHome,
             ),
             const SizedBox(height: 12),
             const Text(
               'Enterate de todo lo nuevo en Etnya 💜',
-              style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.3),
+              style: TextStyle(fontSize: 13, color: _kVioleta, height: 1.3),
             ),
           ],
         ),
