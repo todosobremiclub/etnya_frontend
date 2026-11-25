@@ -7,6 +7,11 @@ class Api {
   static const _base = 'https://etnya.onrender.com';
   static const _kToken = 'jwt';
   static const _kSede = 'sede';
+  static const _kLoginAt = 'login_at'; // momento del login (ms desde epoch)
+
+  /// Duración máxima de la sesión en la app: pasado este tiempo desde el
+  /// login, la socia tiene que volver a iniciar sesión.
+  static const duracionSesion = Duration(hours: 24);
 
   static Map<String, String> _headers([String? t]) => {
         'Content-Type': 'application/json',
@@ -17,17 +22,48 @@ class Api {
   static Future<void> _saveToken(String t) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kToken, t);
+    await sp.setInt(_kLoginAt, DateTime.now().millisecondsSinceEpoch);
   }
 
+  /// Devuelve el token guardado, o null si no hay sesión o si ya pasaron
+  /// 24 hs desde el login (en ese caso además borra la sesión).
   static Future<String?> get token async {
     final sp = await SharedPreferences.getInstance();
-    return sp.getString(_kToken);
+    final t = sp.getString(_kToken);
+    if (t == null || t.isEmpty) return null;
+
+    final loginAt = sp.getInt(_kLoginAt);
+    if (loginAt == null) {
+      // Sesiones abiertas antes de esta versión: empiezan a contar desde
+      // ahora (así no se desloguea a todas de golpe al actualizar).
+      await sp.setInt(_kLoginAt, DateTime.now().millisecondsSinceEpoch);
+      return t;
+    }
+
+    final inicio = DateTime.fromMillisecondsSinceEpoch(loginAt);
+    if (DateTime.now().difference(inicio) >= duracionSesion) {
+      await logout();
+      return null;
+    }
+    return t;
+  }
+
+  /// Tiempo que le queda a la sesión actual (Duration.zero si no hay sesión
+  /// o ya venció). Se usa para programar el deslogueo automático.
+  static Future<Duration> tiempoRestanteSesion() async {
+    final sp = await SharedPreferences.getInstance();
+    final loginAt = sp.getInt(_kLoginAt);
+    if (sp.getString(_kToken) == null || loginAt == null) return Duration.zero;
+    final vence = DateTime.fromMillisecondsSinceEpoch(loginAt).add(duracionSesion);
+    final resta = vence.difference(DateTime.now());
+    return resta.isNegative ? Duration.zero : resta;
   }
 
   static Future<void> logout() async {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_kToken);
     await sp.remove(_kSede);
+    await sp.remove(_kLoginAt);
   }
 
   // ======== LOGIN ========

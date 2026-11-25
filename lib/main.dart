@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -80,8 +81,11 @@ class Gate extends StatefulWidget {
   State<Gate> createState() => _GateState();
 }
 
-class _GateState extends State<Gate> {
+class _GateState extends State<Gate> with WidgetsBindingObserver {
   String? _token;
+
+  // Deslogueo automático a las 24 hs del login (ver Api.duracionSesion).
+  Timer? _timerSesion;
   bool _authChecked = false; // ya sabemos si había un token guardado
 
   // null = todavía no consultamos al backend si aceptó los términos;
@@ -104,6 +108,7 @@ class _GateState extends State<Gate> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb) {
       _setupFCM();
     }
@@ -114,8 +119,56 @@ class _GateState extends State<Gate> {
         _token = t;
         _authChecked = true;
       });
-      if (t != null) _checkTerminos();
+      if (t != null) {
+        _checkTerminos();
+        _programarVencimientoSesion();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timerSesion?.cancel();
+    super.dispose();
+  }
+
+  /// Al volver a la app desde segundo plano revisamos si la sesión venció
+  /// mientras estaba cerrada/minimizada (los Timer no corren en ese estado).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _token != null) {
+      _verificarSesion();
+    }
+  }
+
+  /// Programa un Timer que cierra la sesión justo cuando se cumplen 24 hs.
+  Future<void> _programarVencimientoSesion() async {
+    _timerSesion?.cancel();
+    final resta = await Api.tiempoRestanteSesion();
+    if (!mounted) return;
+    _timerSesion = Timer(resta, _verificarSesion);
+  }
+
+  /// Si la sesión ya venció, vuelve al login (cerrando cualquier pantalla
+  /// que esté abierta encima del Home).
+  Future<void> _verificarSesion() async {
+    final t = await Api.token; // devuelve null y limpia si pasaron 24 hs
+    if (!mounted || t != null) return;
+    _timerSesion?.cancel();
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    setState(() {
+      _token = null;
+      _acceptedTerms = null;
+      _perfilFuture = null;
+      _proximaClaseFuture = null;
+      _recorridoFuture = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tu sesión venció. Volvé a iniciar sesión.'),
+      ),
+    );
   }
 
   Future<void> _cargarFotoLocal() async {
@@ -275,6 +328,7 @@ class _GateState extends State<Gate> {
   }
 
   void _onLogout() async {
+    _timerSesion?.cancel();
     await Api.logout();
     if (mounted) setState(() => _token = null);
   }
@@ -414,6 +468,7 @@ class _GateState extends State<Gate> {
         onLogged: () {
           setState(() => _token = 'ok');
           _checkTerminos();
+          _programarVencimientoSesion();
           if (!kIsWeb) {
             // Ahora que hay sesión, reintentamos guardar el token FCM
             // (por si se había obtenido antes de loguearse).
