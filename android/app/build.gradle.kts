@@ -28,9 +28,9 @@ android {
     defaultConfig {
         applicationId = "com.etnya.pilates"
         minSdk = flutter.minSdkVersion
-        targetSdk = 35
-        versionCode = 30
-        versionName = "1.0.0"
+        targetSdk = 36
+        versionCode = 32
+        versionName = "1.0.2"
     }
 
     compileOptions {
